@@ -8,10 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -19,7 +19,6 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
@@ -29,42 +28,69 @@ class FloatingOverlayService : Service() {
         private const val CHANNEL_ID = "FloatingOverlayServiceChannel"
         private const val NOTIFICATION_ID = 2
 
-        // Singleton instance for updating the overlay
         @SuppressLint("StaticFieldLeak")
         private var instance: FloatingOverlayService? = null
 
-        fun updateOverlay(text: String) {
-            instance?.let { service ->
-                service.overlayTextView.post {
-                    // Convert the incoming text (which can contain <font>, <h2>, etc.) to a styled Spanned
-                    val styled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_LEGACY)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        android.text.Html.fromHtml(text)
-                    }
-                    service.overlayTextView.text = styled
-                }
+        /**
+         * Updates the overlay by setting text and text colors in their respective blocks.
+         * Also makes the overlay visible if hidden.
+         *
+         * @param fare       The fare string (e.g., "$12.50")
+         * @param fareColor  Color int for fare value.
+         * @param pMile      Price per mile string.
+         * @param pMileColor Color int for price per mile.
+         * @param pHour      Price per hour string.
+         * @param pHourColor Color int for price per hour.
+         * @param miles      Total miles string.
+         * @param minutes    Total minutes string.
+         */
+        fun updateOverlay(
+            fare: String, fareColor: Int,
+            pMile: String, pMileColor: Int,
+            pHour: String, pHourColor: Int,
+            miles: String,
+            minutes: String
+        ) {
+            instance?.runOnUiThread {
+                // Ensure the overlay view is visible when updating values.
+                instance?.floatingView?.visibility = View.VISIBLE
+
+                instance?.tvFareValue?.text = fare
+                instance?.tvFareValue?.setTextColor(fareColor)
+
+                instance?.tvPMileValue?.text = pMile
+                instance?.tvPMileValue?.setTextColor(pMileColor)
+
+                instance?.tvPHourValue?.text = pHour
+                instance?.tvPHourValue?.setTextColor(pHourColor)
+
+                instance?.tvMilesValue?.text = miles
+                instance?.tvTimeValue?.text = minutes
             }
         }
 
-        fun updateDebugImage(bitmap: Bitmap) {
-            instance?.debugImageView?.post {
-                instance?.debugImageView?.setImageBitmap(bitmap)
+        /**
+         * Hides the entire overlay by setting its visibility to GONE.
+         */
+        fun hideOverlay() {
+            instance?.runOnUiThread {
+                instance?.floatingView?.visibility = View.GONE
             }
         }
     }
 
     private lateinit var windowManager: WindowManager
-    private var floatingView: View? = null
-    lateinit var overlayTextView: TextView
-    lateinit var debugImageView: ImageView
-    private lateinit var layoutParams: WindowManager.LayoutParams
+    var floatingView: View? = null
+
+    // New TextView references for each block
+    lateinit var tvFareValue: TextView
+    lateinit var tvPMileValue: TextView
+    lateinit var tvPHourValue: TextView
+    lateinit var tvMilesValue: TextView
+    lateinit var tvTimeValue: TextView
 
     override fun onCreate() {
         super.onCreate()
-
-        // Immediately create a notification and call startForeground().
         createNotificationChannel()
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Ride Tracker Overlay")
@@ -73,7 +99,6 @@ class FloatingOverlayService : Service() {
             .build()
         startForeground(NOTIFICATION_ID, notification)
 
-        // Check if overlay permission is granted.
         if (!Settings.canDrawOverlays(this)) {
             Log.e("FloatingOverlayService", "Overlay permission not granted. Please enable it in Settings.")
             stopSelf()
@@ -81,18 +106,21 @@ class FloatingOverlayService : Service() {
         }
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-
-        // Inflate the overlay layout.
         floatingView = LayoutInflater.from(this).inflate(R.layout.floating_overlay, null)
-        overlayTextView = floatingView!!.findViewById(R.id.overlayText)
-//        debugImageView = floatingView!!.findViewById(R.id.debugImage)
 
-        // Set up layout parameters for a movable overlay window.
-        layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // Find the TextViews by their IDs in the inflated layout.
+        tvFareValue = floatingView!!.findViewById(R.id.tvFareValue)
+        tvPMileValue = floatingView!!.findViewById(R.id.tvPMileValue)
+        tvPHourValue = floatingView!!.findViewById(R.id.tvPHourValue)
+        tvMilesValue = floatingView!!.findViewById(R.id.tvMilesValue)
+        tvTimeValue = floatingView!!.findViewById(R.id.tvTimeValue)
+
+        // Set up layout parameters for the overlay window.
+        val layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, // For API 26+
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
             )
@@ -136,6 +164,10 @@ class FloatingOverlayService : Service() {
         })
 
         windowManager.addView(floatingView, layoutParams)
+    }
+
+    private fun runOnUiThread(action: () -> Unit) {
+        Handler(Looper.getMainLooper()).post(action)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

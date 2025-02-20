@@ -51,11 +51,9 @@ class ScreenCaptureService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Screen Capture")
             .setContentText("Capturing screen in background")
-            // Use a known drawable to avoid resource errors
             .setSmallIcon(R.drawable.logo)
             .build()
 
-        // Start as a foreground service
         startForeground(NOTIFICATION_ID, notification)
     }
 
@@ -127,21 +125,17 @@ class ScreenCaptureService : Service() {
                     val mutableBitmap = croppedBitmap.copy(Bitmap.Config.ARGB_8888, true)
 
                     val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastAIUpdateTime > 10_000) {
+                    if (currentTime - lastAIUpdateTime > 1_000) {
                         lastAIUpdateTime = currentTime
 
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
                                 val extractedText = screenTextReader.extractText(mutableBitmap)
-
                                 val allLines = extractedText.split("\n")
-                                // NEW: Distinguish between Uber and Lyft keywords
-                                val uberPatterns = listOf("Uber", "UberX", "Comfort", "Premier", "Exclusive")
-                                val lyftPatterns = listOf("Lyft", "Lyft XL", "Lux", "Shared")
-
-                                // Combine with general patterns
-                                val generalPatterns = listOf("mi", "min", "mins", "fare", "trip", "away", "★", "Verified", Regex("""\$\d"""))
-
+                                // Distinguish between Uber and Lyft keywords
+                                val uberPatterns = listOf("Uber", "UberX", "UberX Priority", "Priority", "Uber Green", "Uber Pet", "Comfort", "Premier", "Exclusive")
+                                val lyftPatterns = listOf("Lyft", "Extra Confort", "Lyft XL", "Lux", "Shared")
+                                val generalPatterns = listOf("mi", "mins", "trip", "away", "★", "Verified", Regex("""\$\d"""))
                                 val blackBoxPatterns = uberPatterns + lyftPatterns + generalPatterns
                                 val filteredLines = allLines.filter { line ->
                                     blackBoxPatterns.any { pattern ->
@@ -208,53 +202,65 @@ class ScreenCaptureService : Service() {
                                 val tripTime = if (!jsonObject.isNull("tripTime")) jsonObject.getDouble("tripTime") else 0.0
                                 val totalMinutes = pickupTime + tripTime
 
-                                // We parse "fare" from AI. If missing, assume 0.0
+                                // Parse "fare" from AI. If missing, assume 0.0
                                 val fare = if (!jsonObject.isNull("fare")) jsonObject.getDouble("fare") else 0.0
 
-                                // If there's no valid fare and no miles, we assume no ride.
+                                // If no valid ride is detected, auto-vanish the overlay.
                                 if (totalMiles <= 0.0 && totalMinutes <= 0.0) {
-                                    // Hide overlay by setting empty text
-                                    FloatingOverlayService.updateOverlay("")
+                                    FloatingOverlayService.hideOverlay()
                                     return@launch
                                 }
 
-                                val pricePerMile = if (totalMiles > 0) {
-                                    fare / totalMiles
-                                } else {
-                                    0.0
-                                }
-
+                                val pricePerMile = if (totalMiles > 0) fare / totalMiles else 0.0
                                 val totalHours = totalMinutes / 60.0
-                                val pricePerHour = if (totalHours > 0) {
-                                    fare / totalHours
-                                } else {
-                                    0.0
-                                }
+                                val pricePerHour = if (totalHours > 0) fare / totalHours else 0.0
 
                                 val formattedPricePerMile = String.format("%.2f", pricePerMile)
                                 val formattedPricePerHour = String.format("%.2f", pricePerHour)
+                                val formattedTotalMiles = String.format("%.1f", totalMiles)
+                                val formattedTotalMinutes = String.format("%.1f", totalMinutes)
 
                                 val pmileColor = when {
                                     pricePerMile < 0.75 -> "red"
                                     pricePerMile < 1.0  -> "yellow"
                                     else                -> "green"
                                 }
-
                                 val phourColor = when {
                                     pricePerHour < 20   -> "red"
                                     pricePerHour < 25   -> "yellow"
                                     else                -> "green"
                                 }
+                                val fareColor = when {
+                                    fare < 5   -> "red"
+                                    fare < 10  -> "yellow"
+                                    else       -> "green"
+                                }
 
-                                val finalOutput = """
-                                    <h1>Price p/Mile: <font color="$pmileColor">${'$'}$formattedPricePerMile</font></h1>
-                                    <h2>Price p/Hour: <font color="$phourColor">${'$'}$formattedPricePerHour</font></h2>
-                                    <h3>Total Price:<font color="blue">$$fare</font></h3>
-                                    Total Miles: $totalMiles<br>
-                                    Total Minutes: $totalMinutes<br><br>
-                                """.trimIndent()
+                                // Convert color string to actual color int
+                                val fareColorInt = when (fareColor) {
+                                    "red" -> Color.RED
+                                    "yellow" -> Color.YELLOW
+                                    else -> Color.GREEN
+                                }
+                                val pMileColorInt = when (pmileColor) {
+                                    "red" -> Color.RED
+                                    "yellow" -> Color.YELLOW
+                                    else -> Color.GREEN
+                                }
+                                val pHourColorInt = when (phourColor) {
+                                    "red" -> Color.RED
+                                    "yellow" -> Color.YELLOW
+                                    else -> Color.GREEN
+                                }
 
-                                FloatingOverlayService.updateOverlay(finalOutput)
+                                // Update the overlay with the new separate values:
+                                FloatingOverlayService.updateOverlay(
+                                    fare = "${'$'}$fare", fareColor = fareColorInt,
+                                    pMile = "${'$'}$formattedPricePerMile", pMileColor = pMileColorInt,
+                                    pHour = "${'$'}$formattedPricePerHour", pHourColor = pHourColorInt,
+                                    miles = formattedTotalMiles,
+                                    minutes = formattedTotalMinutes
+                                )
 
                             } catch (e: Exception) {
                                 Log.e("ScreenCaptureService", "AI processing error: ${e.message}")
