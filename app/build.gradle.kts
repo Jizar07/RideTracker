@@ -16,6 +16,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+        renderscriptTargetApi = 21
+        renderscriptSupportModeEnabled = true
 
         // Manually load local.properties to get the API key
         val localProperties = Properties()
