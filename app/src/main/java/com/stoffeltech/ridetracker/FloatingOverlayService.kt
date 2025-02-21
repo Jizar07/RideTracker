@@ -19,6 +19,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
@@ -35,16 +36,18 @@ class FloatingOverlayService : Service() {
          * Updates the overlay by setting text and text colors in their respective blocks.
          * Also makes the overlay visible if hidden.
          *
-         * @param fare       The fare string (e.g., "$12.50")
-         * @param fareColor  Color int for fare value.
-         * @param pMile      Price per mile string.
+         * @param rideType The ride type string (e.g., "Uber", "Lyft")
+         * @param fare The fare string (e.g., "$12.50")
+         * @param fareColor Color int for fare value.
+         * @param pMile Price per mile string.
          * @param pMileColor Color int for price per mile.
-         * @param pHour      Price per hour string.
+         * @param pHour Price per hour string.
          * @param pHourColor Color int for price per hour.
-         * @param miles      Total miles string.
-         * @param minutes    Total minutes string.
+         * @param miles Total miles string.
+         * @param minutes Total minutes string.
          */
         fun updateOverlay(
+            rideType: String,
             fare: String, fareColor: Int,
             pMile: String, pMileColor: Int,
             pHour: String, pHourColor: Int,
@@ -54,7 +57,9 @@ class FloatingOverlayService : Service() {
             instance?.runOnUiThread {
                 // Ensure the overlay view is visible when updating values.
                 instance?.floatingView?.visibility = View.VISIBLE
-
+                // Update the ride type block.
+                instance?.tvRideTypeValue?.text = rideType
+                // Update the rest of the overlay values.
                 instance?.tvFareValue?.text = fare
                 instance?.tvFareValue?.setTextColor(fareColor)
 
@@ -82,7 +87,10 @@ class FloatingOverlayService : Service() {
     private lateinit var windowManager: WindowManager
     var floatingView: View? = null
 
-    // New TextView references for each block
+    // New TextView reference for Ride Type
+    lateinit var tvRideTypeValue: TextView
+
+    // Existing TextView references.
     lateinit var tvFareValue: TextView
     lateinit var tvPMileValue: TextView
     lateinit var tvPHourValue: TextView
@@ -108,7 +116,9 @@ class FloatingOverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         floatingView = LayoutInflater.from(this).inflate(R.layout.floating_overlay, null)
 
-        // Find the TextViews by their IDs in the inflated layout.
+        // Find the new Ride Type TextView.
+        tvRideTypeValue = floatingView!!.findViewById(R.id.tvRideTypeValue)
+        // Find the existing TextViews.
         tvFareValue = floatingView!!.findViewById(R.id.tvFareValue)
         tvPMileValue = floatingView!!.findViewById(R.id.tvPMileValue)
         tvPHourValue = floatingView!!.findViewById(R.id.tvPHourValue)
@@ -162,6 +172,13 @@ class FloatingOverlayService : Service() {
                 return false
             }
         })
+        val btnClose = floatingView!!.findViewById<Button>(R.id.btnCloseOverlay)
+        btnClose.setOnClickListener {
+            // You can choose to simply hide the overlay...
+            FloatingOverlayService.hideOverlay()
+            // ...or stop the service completely:
+            // stopSelf()
+        }
 
         windowManager.addView(floatingView, layoutParams)
     }

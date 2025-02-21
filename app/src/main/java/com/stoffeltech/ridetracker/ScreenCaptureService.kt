@@ -158,7 +158,7 @@ class ScreenCaptureService : Service() {
                                 }.map { it.toString().trim() }.filter { it.isNotEmpty() }
 
                                 // Define required keywords for the trip request block.
-                                val requiredKeywords = listOf("\\$","mi", "mins", "trip", "away", "Verified", "Accept", "Match")
+                                val requiredKeywords = listOf("\\$", "mi", "mins", "trip", "away", "Verified", "Accept", "Match")
                                 val candidateBlocks = blocks.filter { block ->
                                     requiredKeywords.all { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(block) }
                                 }
@@ -235,6 +235,7 @@ class ScreenCaptureService : Service() {
 
                                 // Update the overlay with the new separate values:
                                 FloatingOverlayService.updateOverlay(
+                                    rideType = rideInfo.rideType ?: "Unknown",
                                     fare = "${'$'}$fareVal", fareColor = fareColorInt,
                                     pMile = "${'$'}$formattedPricePerMile", pMileColor = pMileColorInt,
                                     pHour = "${'$'}$formattedPricePerHour", pHourColor = pHourColorInt,
@@ -347,7 +348,7 @@ class ScreenCaptureService : Service() {
             // Parsing for Uber (or other) requests.
             var fare: Double? = null
             var rideType: String? = null
-            val rideTypeRegex = Regex("(Uber|Lyft|Comfort|Premier|Exclusive|Pet)", RegexOption.IGNORE_CASE)
+            val rideTypeRegex = Regex("(UberX|UberX Priority|UberXL|Uber Green|Comfort|Premier|Exclusive|Pet|Lyft|Lyft Comfort|Lyft XL)", RegexOption.IGNORE_CASE)
             for (line in lines) {
                 if (line.contains("$") && rideTypeRegex.containsMatchIn(line)) {
                     rideType = rideTypeRegex.find(line)?.groupValues?.get(1)
@@ -393,10 +394,17 @@ class ScreenCaptureService : Service() {
             val pickupMatch = pickupTimeRegex.find(cleanedText)
             val pickupTime = pickupMatch?.groupValues?.get(1)?.toDoubleOrNull()
             val pickupDistance = pickupMatch?.groupValues?.get(2)?.toDoubleOrNull()
-            val tripRegex = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*mins.*?\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\).*?trip", RegexOption.IGNORE_CASE)
+            val tripRegex = Regex("(?:(\\d+)\\s*hr[s]?)?\\s*(\\d+)\\s*min.*?\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\).*?trip", RegexOption.IGNORE_CASE)
             val tripMatch = tripRegex.find(cleanedText)
-            val tripTime = tripMatch?.groupValues?.get(1)?.toDoubleOrNull()
-            val tripDistance = tripMatch?.groupValues?.get(2)?.toDoubleOrNull()
+            val tripTime = if (tripMatch != null) {
+                val hours = tripMatch.groupValues[1].toIntOrNull() ?: 0
+                val minutes = tripMatch.groupValues[2].toIntOrNull() ?: 0
+                hours * 60 + minutes.toDouble()
+            } else {
+                null
+            }
+            val tripDistance = tripMatch?.groupValues?.get(3)?.toDoubleOrNull()
+
 
             if (fare == null && pickupTime == null && tripTime == null) return null
             return RideInfo(

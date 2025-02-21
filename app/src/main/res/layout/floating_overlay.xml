@@ -9,27 +9,56 @@ android:background="#616161"
 android:padding="10dp"
 android:gravity="center">
 
-<!-- Block 1: Fare -->
-<LinearLayout
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:gravity="center">
-    <TextView
-        android:id="@+id/tvFareLabel"
+    <!-- New Block: Ride Type -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Fare"
-        android:textStyle="bold"
-        android:textColor="@color/white"
-        android:textSize="12sp" />
-    <TextView
-        android:id="@+id/tvFareValue"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:id="@+id/tvRideTypeLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textStyle="bold"
+            android:textColor="@color/white"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvRideTypeValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Unknown"
+            android:textStyle="bold"
+            android:textColor="@color/quantum_lightblueA400"
+            android:textSize="20sp"
+            android:maxLines="2"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <!-- Block 1: Fare -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="$0.00"
-        android:textSize="20sp" />
-</LinearLayout>
+        android:orientation="vertical"
+        android:gravity="center">
+        <TextView
+            android:id="@+id/tvFareLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Fare"
+            android:textStyle="bold"
+            android:textColor="@color/white"
+            android:textSize="12sp" />
+        <TextView
+            android:id="@+id/tvFareValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="$0.00"
+            android:textSize="20sp" />
+    </LinearLayout>
 
 <!-- Block 2: Price per Mile -->
 <LinearLayout
@@ -124,5 +153,12 @@ android:gravity="center">
         android:text="0.0"
         android:textSize="16sp" />
 </LinearLayout>
+
+    <Button
+        android:id="@+id/btnCloseOverlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Close"
+        android:layout_marginTop="8dp" />
 
 </LinearLayout>
