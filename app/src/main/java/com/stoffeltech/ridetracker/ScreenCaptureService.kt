@@ -135,7 +135,7 @@ class ScreenCaptureService : Service() {
                                 // Distinguish between Uber and Lyft keywords
                                 val uberPatterns = listOf("Uber", "UberX", "UberX Priority", "Priority", "Uber Green", "Uber Pet", "Comfort", "Premier", "Exclusive")
                                 val lyftPatterns = listOf("Lyft", "Extra Confort", "Lyft XL", "Lux", "Shared")
-                                val generalPatterns = listOf("mi", "mins", "trip", "away", "★", "Verified", Regex("""\$\d"""))
+                                val generalPatterns = listOf("mi", "mins", "trip", "away", "★", "Verified", "Accept", "Match", Regex("""\$\d"""))
                                 val blackBoxPatterns = uberPatterns + lyftPatterns + generalPatterns
                                 val filteredLines = allLines.filter { line ->
                                     blackBoxPatterns.any { pattern ->
@@ -152,8 +152,8 @@ class ScreenCaptureService : Service() {
                                 val prompt = """
                                     You are a rideshare offer calculator. The fair information is inside a black box with blue borders and it contains the following information:
                                     - rideType, in-cased in a capsule styled background inside the box
-                                    - fare, with a dollar sign in front of it, may or may not include surge icon
-                                    - rating or ★, is only a number (example: ★ 5.00)
+                                    - $, This indicates the fare with a dollar sign in front of it, may or may not include surge icon
+                                    - ★, this indicates the rating, is only a number (example: ★ 5.00)
                                     - pickupTime, pickupDistance for example: 3 mins (1.7 mi) away
                                     - tripTime, tripDistance for example: 5 mins (1.5 mi) trip
                                     - addresses or locations for pickup and dropoff
@@ -162,8 +162,8 @@ class ScreenCaptureService : Service() {
                                     extract only that black-box content and return valid JSON with keys:
                                     {
                                       "rideType": string,
-                                      "fare": number,
-                                      "rating": string,
+                                      "$": number,
+                                      "★": number,
                                       "pickupTime": number,
                                       "pickupDistance": number,
                                       "tripTime": number,
@@ -203,10 +203,10 @@ class ScreenCaptureService : Service() {
                                 val totalMinutes = pickupTime + tripTime
 
                                 // Parse "fare" from AI. If missing, assume 0.0
-                                val fare = if (!jsonObject.isNull("fare")) jsonObject.getDouble("fare") else 0.0
+                                val fare = if (!jsonObject.isNull("$")) jsonObject.getDouble("$") else 0.0
 
                                 // If no valid ride is detected, auto-vanish the overlay.
-                                if (totalMiles <= 0.0 && totalMinutes <= 0.0) {
+                                if (totalMiles <= 0.0 && totalMinutes <= 0.0 && fare <= 0.0) {
                                     FloatingOverlayService.hideOverlay()
                                     return@launch
                                 }
