@@ -1,4 +1,4 @@
-package com.stoffeltech.ridetracker
+package com.stoffeltech.ridetracker.services
 
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -6,7 +6,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.graphics.*
 import android.hardware.display.DisplayManager
@@ -24,12 +23,17 @@ import androidx.core.app.NotificationCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.stoffeltech.ridetracker.LyftParser
+import com.stoffeltech.ridetracker.R
+import com.stoffeltech.ridetracker.uber.UberParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+
 
 class ScreenCaptureService : Service() {
 
@@ -85,7 +89,7 @@ class ScreenCaptureService : Service() {
 
     @SuppressLint("DefaultLocale")
     private fun startScreenCapture(resultCode: Int, data: Intent) {
-        val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = projectionManager.getMediaProjection(resultCode, data)
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
@@ -96,7 +100,7 @@ class ScreenCaptureService : Service() {
 
         // Obtain full screen dimensions via DisplayManager.
         val metrics = DisplayMetrics()
-        val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val displayManager = getSystemService(DISPLAY_SERVICE) as DisplayManager
         val displays = displayManager.displays
         if (displays.isNotEmpty()) {
             displays[0].getRealMetrics(metrics)
@@ -142,10 +146,6 @@ class ScreenCaptureService : Service() {
                                 val extractedText = extractTextMLKit(rawBitmap)
                                 // Replace all occurrences of 'l' and 'L' with '1'
                                 val fixedText = extractedText.replace("l", "1").replace("L", "1")
-                                Log.d("ScreenCaptureService", "Fixed OCR text: $fixedText")
-
-                                // For simplicity, we use the fixed text as our filtered text.
-                                Log.d("ScreenCaptureService", "Filtered text: $fixedText")
 
                                 // --- Improved block extraction logic ---
                                 val blocks = fixedText.split("\n").fold(mutableListOf<StringBuilder>()) { acc, line ->
@@ -174,6 +174,17 @@ class ScreenCaptureService : Service() {
                                     FloatingOverlayService.hideOverlay()
                                     return@launch
                                 }
+                                // At this point, you have a valid rideInfo object.
+                                // Here you’d retrieve or extract the pickup and dropoff location strings, and the action button text.
+                                val isVerified = tripRequestText.contains("Verified", ignoreCase = true)
+                                val pickupAddress = rideInfo.pickupLocation ?: "N/A"
+                                val dropoffAddress = rideInfo.tripLocation ?: "N/A"
+                                val actionButtonText = "Accept"
+
+                                // Log the structured Uber ride request using your helper.
+                                UberParser.logUberRideRequest(rideInfo, pickupAddress, dropoffAddress, actionButtonText, isVerified)
+
+                                // Continue with updating the overlay if needed.
 
                                 val pickupDistanceVal = rideInfo.pickupDistance ?: 0.0
                                 val tripDistanceVal = rideInfo.tripDistance ?: 0.0
@@ -236,9 +247,12 @@ class ScreenCaptureService : Service() {
                                 // Update the overlay with the new separate values:
                                 FloatingOverlayService.updateOverlay(
                                     rideType = rideInfo.rideType ?: "Unknown",
-                                    fare = "${'$'}$fareVal", fareColor = fareColorInt,
-                                    pMile = "${'$'}$formattedPricePerMile", pMileColor = pMileColorInt,
-                                    pHour = "${'$'}$formattedPricePerHour", pHourColor = pHourColorInt,
+                                    fare = "${'$'}$fareVal",
+                                    fareColor = fareColorInt,
+                                    pMile = "${'$'}$formattedPricePerMile",
+                                    pMileColor = pMileColorInt,
+                                    pHour = "${'$'}$formattedPricePerHour",
+                                    pHourColor = pHourColorInt,
                                     miles = formattedTotalMiles,
                                     minutes = formattedTotalMinutes
                                 )
@@ -280,144 +294,20 @@ class ScreenCaptureService : Service() {
         val tripDistance: Double?
     )
 
-    private fun parseRideInfo(text: String): RideInfo? {
+    private fun parseRideInfo(text: String): com.stoffeltech.ridetracker.services.RideInfo? {
         // Remove header labels.
         val headerKeywords = listOf("p/Mi1e", "Minutes", "Per Mi1e", "Per Minute")
         val cleanedText = text.lines()
             .filter { line -> headerKeywords.none { header -> line.trim().equals(header, ignoreCase = true) } }
             .joinToString("\n")
-        val lines = cleanedText.lines().map { it.trim() }.filter { it.isNotEmpty() }
-
-        // Determine if this is a Lyft request by checking for "yft" (case-insensitive).
-        val isLyft = lines.any { it.contains("yft", ignoreCase = true) }
-        if (isLyft) {
-            // Parsing for Lyft.
-            var fare: Double? = null
-            var pickupTime: Double? = null
-            var pickupDistance: Double? = null
-            var tripTime: Double? = null
-            var tripDistance: Double? = null
-            val rideType = "Lyft"
-
-            // Find the fare/ride type line: must contain both "$" and "yft" (ignoring case).
-            val fareLine = lines.find { it.contains("$") && it.contains("yft", ignoreCase = true) }
-            if (fareLine != null) {
-                // Use the existing fare extraction regex.
-                val fareRegex = Regex("""\$(\d+(?:\.\d+)?)""")
-                val fareMatch = fareRegex.find(fareLine)
-                if (fareMatch != null) {
-                    fare = fareMatch.groupValues[1].toDoubleOrNull()
-                }
-            }
-            // Assume pickup info is the line immediately following the fare line.
-            val fareLineIndex = lines.indexOf(fareLine)
-            if (fareLineIndex != -1) {
-                // Instead of fixed positions, look for the first two lines after the fare line that contain pickup/trip info.
-                val infoLines = lines.drop(fareLineIndex + 1)
-                    .filter { it.contains("min", ignoreCase = true) && it.contains("mi", ignoreCase = true) }
-                if (infoLines.size >= 2) {
-                    var pickupLine = infoLines[0]
-                    var tripLine = infoLines[1]
-                    // Remove any leading non-digit characters (ignore stray symbols, but do not convert them to digits).
-                    pickupLine = pickupLine.replace(Regex("^[^0-9]+"), "")
-                    tripLine = tripLine.replace(Regex("^[^0-9]+"), "")
-                    val pickupRegex = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*min.*?([0-9]+(?:\\.[0-9]+)?)\\s*mi", RegexOption.IGNORE_CASE)
-                    val pickupMatch = pickupRegex.find(pickupLine)
-                    if (pickupMatch != null) {
-                        pickupTime = pickupMatch.groupValues[1].toDoubleOrNull()
-                        pickupDistance = pickupMatch.groupValues[2].toDoubleOrNull()
-                    }
-                    val tripRegex = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*min.*?([0-9]+(?:\\.[0-9]+)?)\\s*mi", RegexOption.IGNORE_CASE)
-                    val tripMatch = tripRegex.find(tripLine)
-                    if (tripMatch != null) {
-                        tripTime = tripMatch.groupValues[1].toDoubleOrNull()
-                        tripDistance = tripMatch.groupValues[2].toDoubleOrNull()
-                    }
-                }
-            }
-            return RideInfo(
-                rideType = rideType,
-                fare = fare,
-                rating = null,
-                pickupTime = pickupTime,
-                pickupDistance = pickupDistance,
-                tripTime = tripTime,
-                tripDistance = tripDistance
-            )
+        // Determine if this is a Lyft request by checking for "yft" (ignoring case).
+        return if (cleanedText.contains("yft", ignoreCase = true)) {
+            LyftParser.parse(cleanedText)
         } else {
-            // Parsing for Uber (or other) requests.
-            var fare: Double? = null
-            var rideType: String? = null
-            val rideTypeRegex = Regex("(UberX|UberX Priority|UberXL|Uber Green|Comfort|Premier|Exclusive|Pet|Lyft|Lyft Comfort|Lyft XL)", RegexOption.IGNORE_CASE)
-            for (line in lines) {
-                if (line.contains("$") && rideTypeRegex.containsMatchIn(line)) {
-                    rideType = rideTypeRegex.find(line)?.groupValues?.get(1)
-                    val dollarIndex = line.indexOf("$")
-                    if (dollarIndex != -1) {
-                        val fareSubstring = line.substring(dollarIndex)
-                        val numericFare = fareSubstring.filter { it.isDigit() || it == '.' || it == ',' }
-                        fare = numericFare.replace(",", ".").toDoubleOrNull()
-                        if (fare != null) break
-                    }
-                }
-            }
-            if (fare == null) {
-                for (i in lines.indices) {
-                    if (rideTypeRegex.containsMatchIn(lines[i])) {
-                        rideType = rideTypeRegex.find(lines[i])?.groupValues?.get(1)
-                        if (i + 1 < lines.size && lines[i + 1].startsWith("$")) {
-                            val rawFareLine = lines[i + 1].removePrefix("$").trim()
-                            val numericFare = rawFareLine.filter { it.isDigit() || it == '.' || it == ',' }
-                            fare = numericFare.replace(",", ".").toDoubleOrNull()
-                            if (fare != null) break
-                        }
-                    }
-                }
-            }
-            if (fare == null) {
-                val pickupRegex = Regex(".*\\d+\\s*mins.*?\\(.*?mi.*?away", RegexOption.IGNORE_CASE)
-                val pickupIndex = lines.indexOfFirst { pickupRegex.containsMatchIn(it) }
-                if (pickupIndex > 0) {
-                    for (j in (pickupIndex - 1) downTo 0) {
-                        if (lines[j].contains("$")) {
-                            val rawFareLine = lines[j].replace("$", "").trim()
-                            val numericFare = rawFareLine.filter { it.isDigit() || it == '.' || it == ',' }
-                            fare = numericFare.replace(",", ".").toDoubleOrNull()
-                            if (fare != null) break
-                        }
-                    }
-                }
-            }
-            val ratingRegex = Regex("★\\s*([0-9]+(?:\\.[0-9]+)?)")
-            val rating = ratingRegex.find(cleanedText)?.groupValues?.get(1)?.toDoubleOrNull()
-            val pickupTimeRegex = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*mins.*?\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\).*?away", RegexOption.IGNORE_CASE)
-            val pickupMatch = pickupTimeRegex.find(cleanedText)
-            val pickupTime = pickupMatch?.groupValues?.get(1)?.toDoubleOrNull()
-            val pickupDistance = pickupMatch?.groupValues?.get(2)?.toDoubleOrNull()
-            val tripRegex = Regex("(?:(\\d+)\\s*hr[s]?)?\\s*(\\d+)\\s*min.*?\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\).*?trip", RegexOption.IGNORE_CASE)
-            val tripMatch = tripRegex.find(cleanedText)
-            val tripTime = if (tripMatch != null) {
-                val hours = tripMatch.groupValues[1].toIntOrNull() ?: 0
-                val minutes = tripMatch.groupValues[2].toIntOrNull() ?: 0
-                hours * 60 + minutes.toDouble()
-            } else {
-                null
-            }
-            val tripDistance = tripMatch?.groupValues?.get(3)?.toDoubleOrNull()
-
-
-            if (fare == null && pickupTime == null && tripTime == null) return null
-            return RideInfo(
-                rideType = rideType,
-                fare = fare,
-                rating = rating,
-                pickupTime = pickupTime,
-                pickupDistance = pickupDistance,
-                tripTime = tripTime,
-                tripDistance = tripDistance
-            )
+            UberParser.parse(cleanedText)
         }
     }
+
     // --- End ride details parsing ---
 
     override fun onDestroy() {
@@ -437,7 +327,7 @@ class ScreenCaptureService : Service() {
                 "Screen Capture Service Channel",
                 NotificationManager.IMPORTANCE_DEFAULT
             )
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(serviceChannel)
         }
     }

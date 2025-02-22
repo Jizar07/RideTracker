@@ -1,4 +1,4 @@
-package com.stoffeltech.ridetracker
+package com.stoffeltech.ridetracker.services
 
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -22,6 +22,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import com.stoffeltech.ridetracker.R
 
 class FloatingOverlayService : Service() {
 
@@ -175,7 +176,7 @@ class FloatingOverlayService : Service() {
         val btnClose = floatingView!!.findViewById<Button>(R.id.btnCloseOverlay)
         btnClose.setOnClickListener {
             // You can choose to simply hide the overlay...
-            FloatingOverlayService.hideOverlay()
+            hideOverlay()
             // ...or stop the service completely:
             // stopSelf()
         }

@@ -29,6 +29,10 @@ import android.graphics.Color
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import com.stoffeltech.ridetracker.services.FloatingOverlayService
+import com.stoffeltech.ridetracker.services.ScreenCaptureService
+import com.stoffeltech.ridetracker.services.clusterPlaces
+import com.stoffeltech.ridetracker.services.fetchNearbyPOIs
 
 fun LatLng.toLocation(): Location = Location("").apply {
     latitude = this@toLocation.latitude

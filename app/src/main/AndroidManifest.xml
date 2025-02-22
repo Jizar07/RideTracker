@@ -28,12 +28,12 @@
         tools:ignore="ForegroundServicePermission">
 
         <service
-            android:name=".FloatingOverlayService"
+            android:name=".services.FloatingOverlayService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
         <service
-            android:name=".ScreenCaptureService"
+            android:name=".services.ScreenCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 

@@ -1,4 +1,4 @@
-package com.stoffeltech.ridetracker
+package com.stoffeltech.ridetracker.services
 
 import android.graphics.Bitmap
 import android.util.Log

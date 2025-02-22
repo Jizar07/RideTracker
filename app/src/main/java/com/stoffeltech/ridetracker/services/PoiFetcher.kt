@@ -1,7 +1,8 @@
-package com.stoffeltech.ridetracker
+package com.stoffeltech.ridetracker.services
 
 import android.util.Log
 import com.google.android.gms.maps.model.LatLng
+import com.stoffeltech.ridetracker.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -12,7 +13,6 @@ import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 data class PlaceResult(
