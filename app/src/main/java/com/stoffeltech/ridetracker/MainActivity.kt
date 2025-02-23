@@ -1,5 +1,6 @@
 package com.stoffeltech.ridetracker
 
+import com.stoffeltech.ridetracker.BuildConfig
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -34,7 +35,13 @@ import com.stoffeltech.ridetracker.services.ScreenCaptureService
 import com.stoffeltech.ridetracker.services.clusterPlaces
 import com.stoffeltech.ridetracker.services.fetchNearbyPOIs
 import android.app.Application
-import com.google.common.flogger.FluentLogger
+import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import com.stoffeltech.ridetracker.utils.DirectionsHelper
+
 
 class RideTrackerApplication : Application() {
     override fun onCreate() {
@@ -311,6 +318,110 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                                     .fillColor(getColorWithOpacity(Color.GREEN, 10)) // 20% opaque fill (i.e., more transparent)
                             )
                         }
+                    }
+                    val aiResponseText = findViewById<TextView>(R.id.aiResponseText)
+
+                    if (clusters.isNotEmpty()) {
+                        // Find the cluster (hotspot) with the smallest distance from the current location
+                        val nearestCluster = clusters.minByOrNull { cluster ->
+                            val hotspotLocation = LatLng(cluster.lat, cluster.lng).toLocation()
+                            currentLatLng.toLocation().distanceTo(hotspotLocation)
+                        }
+                        // Assume currentLatLng is your current location (LatLng)
+                        // and nearestCluster has been determined.
+                        val btnMapToHotspot = findViewById<Button>(R.id.btnMapToHotspot)
+
+                        if (nearestCluster != null) {
+                            val hotspotLatLng = LatLng(nearestCluster.lat, nearestCluster.lng)
+                            val currentLocation = currentLatLng.toLocation()
+                            val hotspotLocation = hotspotLatLng.toLocation()
+                            val distanceMeters = currentLocation.distanceTo(hotspotLocation)
+                            val distanceMiles = distanceMeters * 0.000621371 // Convert meters to miles
+
+                            aiResponseText.text = "You are %.2f miles away from the closest hotspot".format(distanceMiles)
+
+                            // Make the navigation button visible
+                            btnMapToHotspot.visibility = View.VISIBLE
+                            val navigationContainer = findViewById<LinearLayout>(R.id.navigationContainer)
+                            val tvInstruction = findViewById<TextView>(R.id.tvNavigationInstruction)
+                            val btnNextInstruction = findViewById<Button>(R.id.btnNextInstruction)
+                            val btnCancelNavigation = findViewById<Button>(R.id.btnCancelNavigation)
+
+                            btnCancelNavigation.visibility = View.GONE // Hide initially
+
+                            var navigationPolyline: com.google.android.gms.maps.model.Polyline? = null
+                            var instructionIndex = 0
+
+                            // ✅ Single Click Listener for btnMapToHotspot
+                            btnMapToHotspot.setOnClickListener {
+                                val apiKey = BuildConfig.GOOGLE_PLACES_API_KEY
+
+                                lifecycleScope.launch {
+                                    val route = DirectionsHelper.fetchRoute(currentLatLng, hotspotLatLng, apiKey)
+                                    if (route != null) {
+                                        runOnUiThread {
+                                            // Clear only previous navigation, keep POIs
+                                            navigationPolyline?.remove()
+
+                                            // Draw the new route
+                                            navigationPolyline = mMap.addPolyline(
+                                                com.google.android.gms.maps.model.PolylineOptions()
+                                                    .addAll(route.polylinePoints)
+                                                    .color(Color.BLUE)
+                                                    .width(10f)
+                                            )
+
+                                            // Animate the camera to show the route
+                                            val boundsBuilder = com.google.android.gms.maps.model.LatLngBounds.Builder()
+                                            route.polylinePoints.forEach { boundsBuilder.include(it) }
+                                            val bounds = boundsBuilder.build()
+                                            mMap.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100))
+
+                                            // ✅ Display Navigation UI
+                                            navigationContainer.visibility = View.VISIBLE
+                                            btnCancelNavigation.visibility = View.VISIBLE // Show cancel button
+
+                                            // ✅ Handle Instructions
+                                            if (route.steps.isNotEmpty()) {
+                                                tvInstruction.text = route.steps[instructionIndex].instruction
+                                            } else {
+                                                tvInstruction.text = "No navigation instructions available."
+                                            }
+
+                                            btnNextInstruction.setOnClickListener {
+                                                if (++instructionIndex < route.steps.size) {
+                                                    tvInstruction.text = route.steps[instructionIndex].instruction
+                                                    mMap.animateCamera(
+                                                        CameraUpdateFactory.newLatLngZoom(route.steps[instructionIndex].startLocation, 17f)
+                                                    )
+                                                } else {
+                                                    Toast.makeText(this@MainActivity, "End of instructions.", Toast.LENGTH_SHORT).show()
+                                                    instructionIndex = 0
+                                                }
+                                            }
+
+                                            // ✅ Cancel Navigation
+                                            btnCancelNavigation.setOnClickListener {
+                                                navigationPolyline?.remove() // Remove route
+                                                btnCancelNavigation.visibility = View.GONE // Hide cancel button
+                                                navigationContainer.visibility = View.GONE // Hide navigation UI
+                                                btnNextInstruction.text = "Navigation canceled."
+                                            }
+                                        }
+                                    } else {
+                                        runOnUiThread {
+                                            Toast.makeText(this@MainActivity, "Unable to fetch route", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            aiResponseText.text = "No hotspots found nearby."
+                            btnMapToHotspot.visibility = View.GONE
+                        }
+
+
+
                     }
                 }
             } else {

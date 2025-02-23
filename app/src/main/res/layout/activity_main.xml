@@ -15,6 +15,50 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
+        <!-- New Navigation Container on top for turn-by-turn instructions -->
+        <LinearLayout
+            android:id="@+id/navigationContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:background="#FFFFFF"
+            android:elevation="4dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvNavigationInstruction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="AI instruction..."
+                android:textSize="12sp"
+                android:textColor="#000000" />
+
+            <!-- Horizontal container for navigation buttons -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="end"
+                android:paddingTop="8dp">
+
+                <Button
+                    android:id="@+id/btnNextInstruction"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Next"
+                    android:layout_marginEnd="8dp"/>
+
+                <Button
+                    android:id="@+id/btnCancelNavigation"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="X"
+                    android:visibility="gone"/>
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- Google Map Fragment using SupportMapFragment -->
         <androidx.fragment.app.FragmentContainerView
             android:id="@+id/map"
@@ -37,9 +81,16 @@
                 android:id="@+id/aiResponseText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Waiting for AI..."
-                android:textSize="18sp"
+                android:text="AI Thinking..."
+                android:textSize="12sp"
                 android:textColor="#000000"/>
+
+            <Button
+                android:id="@+id/btnMapToHotspot"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Go"
+                android:visibility="gone"/>
         </LinearLayout>
     </RelativeLayout>
 
