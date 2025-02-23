@@ -23,8 +23,15 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.stoffeltech.ridetracker.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 
 class FloatingOverlayService : Service() {
+
+    private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
 
     companion object {
         private const val CHANNEL_ID = "FloatingOverlayServiceChannel"
@@ -55,21 +62,15 @@ class FloatingOverlayService : Service() {
             miles: String,
             minutes: String
         ) {
-            instance?.runOnUiThread {
-                // Ensure the overlay view is visible when updating values.
+            instance?.serviceScope?.launch {
                 instance?.floatingView?.visibility = View.VISIBLE
-                // Update the ride type block.
                 instance?.tvRideTypeValue?.text = rideType
-                // Update the rest of the overlay values.
                 instance?.tvFareValue?.text = fare
                 instance?.tvFareValue?.setTextColor(fareColor)
-
                 instance?.tvPMileValue?.text = pMile
                 instance?.tvPMileValue?.setTextColor(pMileColor)
-
                 instance?.tvPHourValue?.text = pHour
                 instance?.tvPHourValue?.setTextColor(pHourColor)
-
                 instance?.tvMilesValue?.text = miles
                 instance?.tvTimeValue?.text = minutes
             }
@@ -79,7 +80,7 @@ class FloatingOverlayService : Service() {
          * Hides the entire overlay by setting its visibility to GONE.
          */
         fun hideOverlay() {
-            instance?.runOnUiThread {
+            instance?.serviceScope?.launch {
                 instance?.floatingView?.visibility = View.GONE
             }
         }
@@ -195,6 +196,7 @@ class FloatingOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel()
         if (floatingView != null) {
             windowManager.removeView(floatingView)
         }

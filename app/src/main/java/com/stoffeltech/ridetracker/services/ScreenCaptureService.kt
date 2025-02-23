@@ -30,6 +30,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -40,6 +42,7 @@ class ScreenCaptureService : Service() {
     companion object {
         private const val CHANNEL_ID = "ScreenCaptureServiceChannel"
         private const val NOTIFICATION_ID = 1
+        var isRunning = false
     }
 
     private var mediaProjection: MediaProjection? = null
@@ -51,6 +54,7 @@ class ScreenCaptureService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createNotificationChannel()
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Screen Capture")
@@ -74,17 +78,21 @@ class ScreenCaptureService : Service() {
 
     // --- New ML Kit OCR function ---
     @SuppressLint("UnsafeOptInUsageError")
-    private suspend fun extractTextMLKit(bitmap: Bitmap): String = suspendCancellableCoroutine { cont ->
-        val image = InputImage.fromBitmap(bitmap, 0)
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                cont.resume(visionText.text)
+    private suspend fun extractTextMLKit(bitmap: Bitmap): String {
+        return withContext(Dispatchers.IO) {  // Ensures ML Kit runs in the background
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+            try {
+                val visionText = recognizer.process(image).await()
+                visionText.text
+            } catch (e: Exception) {
+                Log.e("ScreenCaptureService", "MLKit OCR processing error: ${e.message}")
+                "Error processing text"
             }
-            .addOnFailureListener { exception ->
-                cont.resumeWithException(exception)
-            }
+        }
     }
+
     // --- End ML Kit OCR function ---
 
     @SuppressLint("DefaultLocale")
@@ -166,7 +174,7 @@ class ScreenCaptureService : Service() {
                                 val tripRequestText = candidateBlocks.maxByOrNull { block ->
                                     requiredKeywords.sumOf { Regex(it, RegexOption.IGNORE_CASE).findAll(block).count() }
                                 } ?: fixedText
-                                Log.d("ScreenCaptureService", "Trip request block text: $tripRequestText")
+//                                Log.d("ScreenCaptureService", "Trip request block text: $tripRequestText")
                                 // --- End improved block extraction logic ---
 
                                 val rideInfo = parseRideInfo(tripRequestText)
@@ -312,6 +320,7 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         virtualDisplay?.release()
         mediaProjection?.stop()
         imageReader?.close()

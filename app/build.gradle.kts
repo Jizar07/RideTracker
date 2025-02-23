@@ -79,6 +79,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.google.mlkit:camera:16.0.0-beta3")
 
+    implementation ("com.google.flogger:flogger:0.5.1")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

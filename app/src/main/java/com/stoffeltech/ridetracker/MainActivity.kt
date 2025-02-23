@@ -33,7 +33,15 @@ import com.stoffeltech.ridetracker.services.FloatingOverlayService
 import com.stoffeltech.ridetracker.services.ScreenCaptureService
 import com.stoffeltech.ridetracker.services.clusterPlaces
 import com.stoffeltech.ridetracker.services.fetchNearbyPOIs
+import android.app.Application
+import com.google.common.flogger.FluentLogger
 
+class RideTrackerApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        Log.i("RideTrackerApplication", "Application initialized")
+    }
+}
 fun LatLng.toLocation(): Location = Location("").apply {
     latitude = this@toLocation.latitude
     longitude = this@toLocation.longitude
@@ -145,6 +153,25 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val isScreenRecordingGranted = prefs.getBoolean("screen_recording_granted", false)
+        Log.d("MainActivity", "isScreenRecordingGranted: $isScreenRecordingGranted")
+        if (!isScreenRecordingGranted) {
+            // Request permission only if not already granted
+            requestScreenCapturePermission()
+        } else {
+            // ✅ Start ScreenCaptureService immediately if permission was previously granted
+            startScreenCaptureService()
+        }
+        if (ScreenCaptureService.isRunning) {
+            // Service is already active; no need to request permission again.
+            Log.d("MainActivity", "ScreenCaptureService is running; skipping permission request.")
+            startScreenCaptureService() // Optionally, ensure it's running
+        } else {
+            // If not running, then request permission
+            requestScreenCapturePermission()
+        }
         // Initialize the map fragment
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -168,7 +195,24 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // [NEW] Start the floating overlay service so the overlay is available
         startOverlayService()
     }
+    private fun requestScreenCapturePermission() {
+        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val screenCaptureIntent = mediaProjectionManager.createScreenCaptureIntent()
+        startActivityForResult(screenCaptureIntent, SCREEN_CAPTURE_REQUEST_CODE)
+    }
+    private fun startScreenCaptureService() {
+        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val isScreenRecordingGranted = prefs.getBoolean("screen_recording_granted", false)
 
+        if (isScreenRecordingGranted) {
+            val serviceIntent = Intent(this, ScreenCaptureService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        }
+    }
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -207,18 +251,31 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    private var isTrackingLocation = false  // Flag to track location updates
+
     private fun startLocationUpdates() {
+        if (isTrackingLocation) return // Prevents duplicate requests
+
         val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
             com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, 10000L
         ).setMinUpdateIntervalMillis(5000L).build()
+
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED &&
             ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) {
             return
         }
+
         fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
+        isTrackingLocation = true  // Set flag to true after starting updates
     }
+
+    private fun stopLocationUpdates() {
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        isTrackingLocation = false // Reset flag when stopping updates
+    }
+
 
     // Called when inactivity is detected (ride is finished)
     private fun onRideFinished() {
@@ -260,15 +317,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 Log.d("MainActivity", "Current location is null.")
             }
         }
-        // NEW: Request screen capture permission
-        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val screenCaptureIntent = mediaProjectionManager.createScreenCaptureIntent()
-        startActivityForResult(screenCaptureIntent, SCREEN_CAPTURE_REQUEST_CODE)
     }
 
     override fun onPause() {
         super.onPause()
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        stopLocationUpdates() // Uses the new method we added
+    }
+    override fun onResume() {
+        super.onResume()
+        startLocationUpdates() // Restart location tracking when resuming
     }
 
     @Deprecated("Deprecated in Java")
@@ -276,6 +333,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK && data != null) {
+                // ✅ Save permission state
+                val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("screen_recording_granted", true).apply()
+
                 // Start the ScreenCaptureService with the result data
                 val serviceIntent = Intent(this, ScreenCaptureService::class.java)
                 serviceIntent.putExtra("resultCode", resultCode)
@@ -290,6 +351,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
     }
-
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) {
+            stopService(Intent(this, ScreenCaptureService::class.java))
+            Log.d("MainActivity", "ScreenCaptureService stopped because app is closing.")
+        }
+    }
 }
 
