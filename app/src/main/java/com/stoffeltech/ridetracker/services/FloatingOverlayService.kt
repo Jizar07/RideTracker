@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Resources
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
@@ -14,11 +15,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
-import android.view.Gravity
-import android.view.LayoutInflater
-import android.view.MotionEvent
-import android.view.View
-import android.view.WindowManager
+import android.util.TypedValue
+import android.view.*
 import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
@@ -32,8 +30,49 @@ import kotlinx.coroutines.cancel
 class FloatingOverlayService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
+    var floatingView: View? = null
+
+    // Container that holds the overlay content.
+    private var overlayContainer: ViewGroup? = null
+
+    // New TextView reference for Ride Type
+    lateinit var tvRideTypeValue: TextView
+
+    // Existing TextView references.
+    lateinit var tvFareValue: TextView
+    lateinit var tvPMileValue: TextView
+    lateinit var tvPHourValue: TextView
+    lateinit var tvMilesValue: TextView
+    lateinit var tvTimeValue: TextView
     lateinit var tvProfitLossValue: TextView
 
+    // Variables for dragging.
+    private var initialX = 0
+    private var initialY = 0
+    private var initialTouchX = 0f
+    private var initialTouchY = 0f
+
+    // Layout parameters for the floating view.
+    private lateinit var layoutParams: WindowManager.LayoutParams
+
+    // ScaleGestureDetector for pinch-to-zoom resizing.
+    private lateinit var scaleGestureDetector: ScaleGestureDetector
+    private var currentScale = 1.0f
+    private var originalWidth = 0
+    private var originalHeight = 0
+
+    // We'll store each TextView's original text size (in pixels).
+    private var origTextSizeRideType: Float = 0f
+    private var origTextSizeFare: Float = 0f
+    private var origTextSizePMile: Float = 0f
+    private var origTextSizePHour: Float = 0f
+    private var origTextSizeMiles: Float = 0f
+    private var origTextSizeTime: Float = 0f
+    private var origTextSizeProfitLoss: Float = 0f
+
+    // Define a moderate scale range.
+    private val minScale = 0.8f
+    private val maxScale = 1.5f
 
     companion object {
         private const val CHANNEL_ID = "FloatingOverlayServiceChannel"
@@ -92,18 +131,8 @@ class FloatingOverlayService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
-    var floatingView: View? = null
 
-    // New TextView reference for Ride Type
-    lateinit var tvRideTypeValue: TextView
-
-    // Existing TextView references.
-    lateinit var tvFareValue: TextView
-    lateinit var tvPMileValue: TextView
-    lateinit var tvPHourValue: TextView
-    lateinit var tvMilesValue: TextView
-    lateinit var tvTimeValue: TextView
-
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -123,7 +152,17 @@ class FloatingOverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         floatingView = LayoutInflater.from(this).inflate(R.layout.floating_overlay, null)
 
-        // Find the new Ride Type TextView.
+        // Get the container from your layout. Your root element has id "overlayRoot".
+        overlayContainer = floatingView?.findViewById(R.id.overlayRoot)
+        // Fallback: if not found and the root is a ViewGroup.
+        if (overlayContainer == null && floatingView is ViewGroup) {
+            overlayContainer = floatingView as ViewGroup
+        }
+        // Disable clipping on the container.
+        overlayContainer?.clipChildren = false
+        overlayContainer?.clipToPadding = false
+
+        // Initialize TextView references.
         tvRideTypeValue = floatingView!!.findViewById(R.id.tvRideTypeValue)
         // Find the existing TextViews.
         tvFareValue = floatingView!!.findViewById(R.id.tvFareValue)
@@ -133,9 +172,8 @@ class FloatingOverlayService : Service() {
         tvTimeValue = floatingView!!.findViewById(R.id.tvTimeValue)
         tvProfitLossValue = floatingView!!.findViewById(R.id.tvProfitLossValue)
 
-
-        // Set up layout parameters for the overlay window.
-        val layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // Set up layout parameters.
+        layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -156,31 +194,48 @@ class FloatingOverlayService : Service() {
         layoutParams.x = 100
         layoutParams.y = 100
 
-        // Make the view draggable.
-        floatingView!!.setOnTouchListener(object : View.OnTouchListener {
-            private var initialX: Int = 0
-            private var initialY: Int = 0
-            private var initialTouchX: Float = 0f
-            private var initialTouchY: Float = 0f
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
+        // Initialize the ScaleGestureDetector to handle pinch-to-zoom.
+        scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                // Update the current scale factor.
+                currentScale *= detector.scaleFactor
+                currentScale = currentScale.coerceIn(minScale, maxScale)
+                // Update the window size based on the original dimensions of the container.
+                layoutParams.width = (originalWidth * currentScale).toInt().coerceAtLeast(200)
+                layoutParams.height = (originalHeight * currentScale).toInt().coerceAtLeast(200)
+                windowManager.updateViewLayout(floatingView, layoutParams)
+                // Instead of applying a raw scale transform, update each text size.
+                updateTextSizes(currentScale)
+                return true
+            }
+        })
+
+        // Set up onTouchListener to handle both dragging and scaling.
+        floatingView?.setOnTouchListener { _, event ->
+            scaleGestureDetector.onTouchEvent(event)
+            if (event.pointerCount == 1) {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         initialX = layoutParams.x
                         initialY = layoutParams.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
-                        return true
+                        true
                     }
                     MotionEvent.ACTION_MOVE -> {
                         layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
                         layoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
                         windowManager.updateViewLayout(floatingView, layoutParams)
-                        return true
+                        true
                     }
+                    else -> false
                 }
-                return false
+            } else {
+                true
             }
-        })
+        }
+
+        // Set up the close button to hide the overlay.
         val btnClose = floatingView!!.findViewById<Button>(R.id.btnCloseOverlay)
         btnClose.setOnClickListener {
             // You can choose to simply hide the overlay...
@@ -190,6 +245,52 @@ class FloatingOverlayService : Service() {
         }
 
         windowManager.addView(floatingView, layoutParams)
+
+        // Capture the original dimensions of the overlay once it has been laid out.
+        floatingView?.post {
+            originalWidth = overlayContainer?.width ?: floatingView!!.width
+            originalHeight = overlayContainer?.height ?: floatingView!!.height
+
+            origTextSizeRideType = tvRideTypeValue.textSize
+            origTextSizeFare = tvFareValue.textSize
+            origTextSizePMile = tvPMileValue.textSize
+            origTextSizePHour = tvPHourValue.textSize
+            origTextSizeMiles = tvMilesValue.textSize
+            origTextSizeTime = tvTimeValue.textSize
+            origTextSizeProfitLoss = tvProfitLossValue.textSize
+        }
+    }
+
+    private fun updateTextSizes(scale: Float) {
+        // Update each TextView's text size (in pixels) based on its original value.
+        tvRideTypeValue.setTextSize(
+            TypedValue.COMPLEX_UNIT_PX,
+            origTextSizeRideType * scale
+        )
+        tvFareValue.setTextSize(
+            TypedValue.COMPLEX_UNIT_PX,
+            origTextSizeFare * scale
+        )
+        tvPMileValue.setTextSize(
+            TypedValue.COMPLEX_UNIT_PX,
+            origTextSizePMile * scale
+        )
+        tvPHourValue.setTextSize(
+            TypedValue.COMPLEX_UNIT_PX,
+            origTextSizePHour * scale
+        )
+        tvMilesValue.setTextSize(
+            TypedValue.COMPLEX_UNIT_PX,
+            origTextSizeMiles * scale
+        )
+        tvTimeValue.setTextSize(
+            TypedValue.COMPLEX_UNIT_PX,
+            origTextSizeTime * scale
+        )
+        tvProfitLossValue.setTextSize(
+            TypedValue.COMPLEX_UNIT_PX,
+            origTextSizeProfitLoss * scale
+        )
     }
 
     private fun runOnUiThread(action: () -> Unit) {
@@ -204,9 +305,7 @@ class FloatingOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        if (floatingView != null) {
-            windowManager.removeView(floatingView)
-        }
+        floatingView?.let { windowManager.removeView(it) }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
