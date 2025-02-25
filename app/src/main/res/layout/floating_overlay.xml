@@ -1,164 +1,236 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
-xmlns:android="http://schemas.android.com/apk/res/android"
-android:id="@+id/overlayContainer"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:orientation="vertical"
-android:background="#616161"
-android:padding="10dp"
-android:gravity="center">
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlayRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#CD000000"
+    android:padding="10dp"
+    android:gravity="center_horizontal">
 
-    <!-- New Block: Ride Type -->
+    <!-- Row 1: Fare, Distance, Minutes -->
     <LinearLayout
+        android:id="@+id/row1"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:layout_marginBottom="8dp">
 
-        <TextView
-            android:id="@+id/tvRideTypeLabel"
+        <!-- Fare Block -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text=""
-            android:textStyle="bold"
-            android:textColor="@color/white"
-            android:textSize="12sp" />
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginEnd="16dp">
+            <TextView
+                android:id="@+id/tvFareLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Fare"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:singleLine="true" />
+            <TextView
+                android:id="@+id/tvFareValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$0.00"
+                android:textSize="20sp"
+                android:singleLine="true" />
+        </LinearLayout>
 
-        <TextView
-            android:id="@+id/tvRideTypeValue"
+        <!-- Distance Block -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Unknown"
-            android:textStyle="bold"
-            android:textColor="@color/quantum_lightblueA400"
-            android:textSize="20sp"
-            android:maxLines="2"
-            android:ellipsize="end" />
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginEnd="16dp">
+            <TextView
+                android:id="@+id/tvMilesLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Distance"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:singleLine="true" />
+            <TextView
+                android:id="@+id/tvMilesValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.0"
+                android:textColor="@color/white"
+                android:textSize="16sp"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <!-- Minutes Block -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal">
+            <TextView
+                android:id="@+id/tvTimeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Minutes"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:singleLine="true" />
+            <TextView
+                android:id="@+id/tvTimeValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.0"
+                android:textColor="@color/white"
+                android:textSize="16sp"
+                android:singleLine="true" />
+        </LinearLayout>
     </LinearLayout>
 
-    <!-- Block 1: Fare -->
+    <!-- Row 2: Profit/Loss, p/Mile, p/Hour -->
     <LinearLayout
+        android:id="@+id/row2"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center">
-        <TextView
-            android:id="@+id/tvFareLabel"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <!-- Profit/Loss Block -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Fare"
-            android:textStyle="bold"
-            android:textColor="@color/white"
-            android:textSize="12sp" />
-        <TextView
-            android:id="@+id/tvFareValue"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginEnd="16dp">
+            <TextView
+                android:id="@+id/tvProfitLossLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Profit/Loss"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:singleLine="true" />
+            <TextView
+                android:id="@+id/tvProfitLossValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="N/A"
+                android:textColor="@color/quantum_googgreenA400"
+                android:textSize="20sp"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <!-- p/Mile Block -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="$0.00"
-            android:textSize="20sp" />
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginEnd="16dp">
+            <TextView
+                android:id="@+id/tvPMileLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="p/Mile"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:singleLine="true" />
+            <TextView
+                android:id="@+id/tvPMileValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$0.00"
+                android:textSize="20sp"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <!-- p/Hour Block -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal">
+            <TextView
+                android:id="@+id/tvPHourLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="p/Hour"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:singleLine="true" />
+            <TextView
+                android:id="@+id/tvPHourValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$0.00"
+                android:textSize="20sp"
+                android:singleLine="true" />
+        </LinearLayout>
     </LinearLayout>
 
-<!-- Block 2: Price per Mile -->
-<LinearLayout
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:layout_marginTop="8dp">
-    <TextView
-        android:id="@+id/tvPMileLabel"
-        android:layout_width="wrap_content"
+    <!-- Row 3: Ride Type and Close Button -->
+    <LinearLayout
+        android:id="@+id/row3"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="p/Mile"
-        android:textStyle="bold"
-        android:textColor="@color/white"
-        android:textSize="12sp" />
-    <TextView
-        android:id="@+id/tvPMileValue"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="$0.00"
-        android:textSize="20sp" />
-</LinearLayout>
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp"
+        android:paddingHorizontal="8dp">
 
-<!-- Block 3: Price per Hour -->
-<LinearLayout
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:layout_marginTop="8dp">
-    <TextView
-        android:id="@+id/tvPHourLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="p/Hour"
-        android:textStyle="bold"
-        android:textColor="@color/white"
-        android:textSize="12sp" />
-    <TextView
-        android:id="@+id/tvPHourValue"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="$0.00"
-        android:textSize="20sp" />
-</LinearLayout>
+        <!-- Ride Type Block -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginEnd="16dp">
+            <TextView
+                android:id="@+id/tvRideTypeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ride Type"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:singleLine="true"/>
+            <TextView
+                android:id="@+id/tvRideTypeValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Unknown"
+                android:textStyle="bold"
+                android:textColor="@color/quantum_lightblueA400"
+                android:textSize="20sp"
+                android:singleLine="true"
+                android:ellipsize="end"/>
+        </LinearLayout>
 
-<!-- Block 4: Total Miles -->
-<LinearLayout
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:layout_marginTop="8dp">
-    <TextView
-        android:id="@+id/tvMilesLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Distance"
-        android:textStyle="bold"
-        android:textColor="@color/white"
-        android:textSize="12sp" />
-    <TextView
-        android:id="@+id/tvMilesValue"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="@color/white"
-        android:text="0.0"
-        android:textSize="16sp" />
-</LinearLayout>
-
-<!-- Block 5: Total Minutes -->
-<LinearLayout
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:layout_marginTop="8dp">
-    <TextView
-        android:id="@+id/tvTimeLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Minutes"
-        android:textStyle="bold"
-        android:textColor="@color/white"
-        android:textSize="12sp" />
-    <TextView
-        android:id="@+id/tvTimeValue"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="@color/white"
-        android:text="0.0"
-        android:textSize="16sp" />
-</LinearLayout>
-
-    <Button
-        android:id="@+id/btnCloseOverlay"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Close"
-        android:layout_marginTop="8dp" />
+        <!-- Close Button Block -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center">
+            <Button
+                android:id="@+id/btnCloseOverlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Close"
+                android:singleLine="true"
+                android:ellipsize="end"/>
+        </LinearLayout>
+    </LinearLayout>
 
 </LinearLayout>

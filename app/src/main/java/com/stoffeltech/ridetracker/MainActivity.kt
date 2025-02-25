@@ -2,6 +2,7 @@ package com.stoffeltech.ridetracker
 
 import com.stoffeltech.ridetracker.BuildConfig
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
@@ -40,6 +41,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.ActionBarDrawerToggle
 import com.stoffeltech.ridetracker.utils.DirectionsHelper
 
 
@@ -157,9 +159,39 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         Log.d("MainActivity", "FloatingOverlayService started.")
     }
 
+    @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Set up the toolbar and enable the drawer toggle
+        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        val drawerLayout = findViewById<androidx.drawerlayout.widget.DrawerLayout>(R.id.drawer_layout)
+        val navView = findViewById<com.google.android.material.navigation.NavigationView>(R.id.nav_view)
+        val toggle = ActionBarDrawerToggle(
+            this,
+            drawerLayout,
+            toolbar,
+            R.string.navigation_drawer_open,
+            R.string.navigation_drawer_close
+        )
+        drawerLayout.addDrawerListener(toggle)
+        toggle.syncState()
+
+
+// Handle navigation drawer item selections.
+        navView.setNavigationItemSelectedListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.nav_settings -> {
+                    // Launch SettingsActivity when the "Settings" item is selected.
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    drawerLayout.closeDrawers()  // Close the drawer after selection
+                    true  // Indicate that we handled this selection
+                }
+                else -> false  // For other items, do nothing here.
+            }
+        }
 
         val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         val isScreenRecordingGranted = prefs.getBoolean("screen_recording_granted", false)

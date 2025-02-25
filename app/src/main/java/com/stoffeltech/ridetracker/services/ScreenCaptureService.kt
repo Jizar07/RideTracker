@@ -20,11 +20,13 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.preference.PreferenceManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.stoffeltech.ridetracker.LyftParser
 import com.stoffeltech.ridetracker.R
+import com.stoffeltech.ridetracker.SettingsActivity
 import com.stoffeltech.ridetracker.uber.UberParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -150,10 +152,26 @@ class ScreenCaptureService : Service() {
 
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
-                                // Extract text from the raw high-resolution bitmap.
-                                val extractedText = extractTextMLKit(rawBitmap)
-                                // Replace all occurrences of 'l' and 'L' with '1'
-                                val fixedText = extractedText.replace("l", "1").replace("L", "1")
+                                // Create an InputImage from the rawBitmap for ML Kit processing.
+                                val imageForText = InputImage.fromBitmap(rawBitmap, 0)
+                                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                                val prefs = PreferenceManager.getDefaultSharedPreferences(this@ScreenCaptureService)
+                                val visionText = recognizer.process(imageForText).await()
+                                val rideTypeBlocks = visionText.textBlocks.filter { block ->
+                                    block.text.contains("Uber", ignoreCase = true) || block.text.contains("Delivery", ignoreCase = true)
+                                }
+                                val minTop = if (rideTypeBlocks.isNotEmpty()) {
+                                    // Get the smallest top coordinate among the ride type blocks.
+                                    rideTypeBlocks.minOf { it.boundingBox?.top ?: Int.MAX_VALUE }
+                                } else {
+                                    0
+                                }
+                                val filteredText = visionText.textBlocks
+                                    .filter { (it.boundingBox?.top ?: 0) >= minTop }
+                                    .joinToString("\n") { it.text }
+                                val fixedText = filteredText.replace("l", "1").replace("L", "1")
+
+
 
                                 // --- Improved block extraction logic ---
                                 val blocks = fixedText.split("\n").fold(mutableListOf<StringBuilder>()) { acc, line ->
@@ -202,38 +220,58 @@ class ScreenCaptureService : Service() {
                                 val tripTimeVal = rideInfo.tripTime ?: 0.0
                                 val totalMinutes = pickupTimeVal + tripTimeVal
 
+
                                 val fareVal = rideInfo.fare ?: 0.0
+                                val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()  // default bonus, adjust as needed
+                                val adjustedFare = fareVal + bonus
+                                val adjustedFareStr = String.format("%.2f", adjustedFare)
+
+
 
                                 // If no valid ride is detected, auto-vanish the overlay.
-                                if (totalMiles <= 0.0 && totalMinutes <= 0.0 && fareVal <= 0.0) {
+                                if (totalMiles <= 0.0 && totalMinutes <= 0.0 && adjustedFare <= 0.0) {
                                     FloatingOverlayService.hideOverlay()
                                     return@launch
                                 }
 
-                                val pricePerMile = if (totalMiles > 0) fareVal / totalMiles else 0.0
+                                val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
                                 val totalHours = totalMinutes / 60.0
-                                val pricePerHour = if (totalHours > 0) fareVal / totalHours else 0.0
-
+                                val pricePerHour = if (totalHours > 0) adjustedFare / totalHours else 0.0
                                 val formattedPricePerMile = String.format("%.2f", pricePerMile)
                                 val formattedPricePerHour = String.format("%.2f", pricePerHour)
                                 val formattedTotalMiles = String.format("%.1f", totalMiles)
                                 val formattedTotalMinutes = String.format("%.1f", totalMinutes)
 
+                                // Load threshold values from SharedPreferences (using the keys defined in SettingsActivity)
+                                val acceptPerMile = prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f).toDouble()
+                                val declinePerMile = prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f).toDouble()
+                                val acceptPerHour = prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f).toDouble()
+                                val declinePerHour = prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f).toDouble()
+                                val fareLow = prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f).toDouble()
+                                val fareHigh = prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f).toDouble()
+                                val costPerMile = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f).toDouble()  // default $0.20 per mile
+                                val profit = adjustedFare - (costPerMile * totalMiles)
+                                val profitStr = String.format("$%.2f", profit)
+                                val profitColorInt = if (profit >= 0) Color.GREEN else Color.RED
+
+
+
                                 val pmileColor = when {
-                                    pricePerMile < 0.75 -> "red"
-                                    pricePerMile < 1.0  -> "yellow"
-                                    else                -> "green"
+                                    pricePerMile < declinePerMile -> "red"
+                                    pricePerMile < acceptPerMile  -> "yellow"
+                                    else                          -> "green"
                                 }
                                 val phourColor = when {
-                                    pricePerHour < 20   -> "red"
-                                    pricePerHour < 25   -> "yellow"
-                                    else                -> "green"
+                                    pricePerHour < declinePerHour -> "red"
+                                    pricePerHour < acceptPerHour  -> "yellow"
+                                    else                          -> "green"
                                 }
                                 val fareColor = when {
-                                    fareVal < 5 -> "red"
-                                    fareVal < 10 -> "yellow"
-                                    else -> "green"
+                                    adjustedFare < fareLow  -> "red"
+                                    adjustedFare < fareHigh -> "yellow"
+                                    else               -> "green"
                                 }
+
 
                                 // Convert color string to actual color int
                                 val fareColorInt = when (fareColor) {
@@ -255,14 +293,16 @@ class ScreenCaptureService : Service() {
                                 // Update the overlay with the new separate values:
                                 FloatingOverlayService.updateOverlay(
                                     rideType = rideInfo.rideType ?: "Unknown",
-                                    fare = "${'$'}$fareVal",
+                                    fare = "${'$'}$adjustedFareStr",
                                     fareColor = fareColorInt,
                                     pMile = "${'$'}$formattedPricePerMile",
                                     pMileColor = pMileColorInt,
                                     pHour = "${'$'}$formattedPricePerHour",
                                     pHourColor = pHourColorInt,
                                     miles = formattedTotalMiles,
-                                    minutes = formattedTotalMinutes
+                                    minutes = formattedTotalMinutes,
+                                    profit = profitStr,
+                                    profitColor = profitColorInt
                                 )
 
                             } catch (e: Exception) {

@@ -12,6 +12,10 @@ import com.stoffeltech.ridetracker.services.RideInfo
  * @param actionButton A string representing the action (e.g. "Accept" in blue or "Match" in gray).
  */
 
+private var lastDeliveryRawFare: Double? = null
+private var lastDeliveryAdjustedFare: Double? = null
+private var lastDeliveryRequestHash: Int? = null
+
 
 object UberParser {
     fun logUberRideRequest(
@@ -57,7 +61,16 @@ object UberParser {
         var fare: Double? = null
         var rideType: String? = null
         // Adjust the regex as needed for Uber ride type keywords.
-        val rideTypeRegex = Regex("(UberX|UberX Priority|UberXL|Uber Green|Green Comfort|Comfort|Premier|Exclusive|Pet|Uber Black|Uber Black XL|UberPool|Uber Connect|Uber Connect XL|Uber Share)", RegexOption.IGNORE_CASE)
+        val rideTypeRegex = Regex("(UberX|UberX Priority|UberXL|Uber Green|Green Comfort|Comfort|Premier|Exclusive|Pet|Uber Black|Uber Black XL|UberPool|Uber Connect|Uber Connect XL|Uber Share|Delivery)", RegexOption.IGNORE_CASE)
+
+
+        val correctedText = cleanedText
+            .replace("De1ivery", "Delivery", ignoreCase = true)
+            .replace("delive1y", "delivery", ignoreCase = true)
+            .replace("tota1", "total", ignoreCase = true)
+
+        Log.d("UberParser", "Corrected Text: $correctedText")
+
 
         // --- Attempt 1: Look for a line that contains both "$" and a ride type ---
         for (line in lines) {
@@ -72,6 +85,62 @@ object UberParser {
                 }
             }
         }
+        // List of known Uber ride keywords (excluding "Delivery")
+        val rideKeywords = listOf("UberX", "UberX Priority", "UberXL", "Uber Green", "Green Comfort", "Comfort", "Premier", "Exclusive", "Pet", "Uber Black", "Uber Black XL", "UberPool", "Uber Connect", "Uber Connect XL", "Uber Share")
+        // Check if any of these keywords exist in the corrected text.
+        val containsRideKeyword = rideKeywords.any { correctedText.contains(it, ignoreCase = true) }
+
+        // Fallback: Only if no ride keyword is found and corrected text contains "Delivery", set rideType to "Delivery"
+        if (rideType == null && !containsRideKeyword && correctedText.contains("Delivery", ignoreCase = true)) {
+            rideType = "Delivery"
+            Log.d("UberParser", "Fallback: Setting rideType to Delivery based on corrected text")
+        }
+
+        if (rideType?.equals("Delivery", ignoreCase = true) == true) {
+            // Use correctedText to fix OCR issues.
+            // (Assuming correctedText is already defined at the beginning of your parse() function.)
+
+            // Parse total time and total distance from correctedText.
+            val timeRegex = Regex("([0-9]+)\\s*min", RegexOption.IGNORE_CASE)
+            val totalTime = timeRegex.find(correctedText)?.groupValues?.get(1)?.toDoubleOrNull()
+
+            val distanceRegex = Regex("\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\)", RegexOption.IGNORE_CASE)
+            val totalDistance = distanceRegex.find(correctedText)?.groupValues?.get(1)?.toDoubleOrNull()
+
+            // Extract the raw fare using all matches and take the last one.
+            val fareRegex = Regex("\\$([0-9]+(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
+            val fareMatches = fareRegex.findAll(correctedText).toList()
+            val rawFare = fareMatches.lastOrNull()?.groupValues?.get(1)?.toDoubleOrNull()
+
+            // Use our static variables to adjust the fare only once per unique request.
+            var fareVal: Double? = null
+            if (rawFare != null) {
+                // If we have a previous raw fare and the new raw fare is essentially the same (difference < 0.01), reuse the adjusted fare.
+                if (lastDeliveryRawFare != null && Math.abs(rawFare - lastDeliveryRawFare!!) < 0.01) {
+                    fareVal = lastDeliveryAdjustedFare
+                } else {
+                    fareVal = rawFare + 0.0
+                    lastDeliveryRawFare = rawFare
+                    lastDeliveryAdjustedFare = fareVal
+                }
+            }
+
+            Log.d("UberParser", "Delivery parsing: rideType=$rideType, rawFare=$rawFare, adjustedFare=$fareVal, totalTime=$totalTime, totalDistance=$totalDistance")
+
+            return RideInfo(
+                rideType       = rideType,
+                fare           = fareVal,
+                rating         = null,
+                pickupTime     = totalTime,
+                pickupDistance = totalDistance,
+                pickupLocation = null,
+                tripTime       = null,
+                tripDistance   = null,
+                tripLocation   = null
+            )
+        }
+
+
         // --- Attempt 2: Look for a ride type line and then check the following line for a fare ---
         if (fare == null) {
             for (i in lines.indices) {

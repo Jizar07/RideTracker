@@ -32,6 +32,8 @@ import kotlinx.coroutines.cancel
 class FloatingOverlayService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
+    lateinit var tvProfitLossValue: TextView
+
 
     companion object {
         private const val CHANNEL_ID = "FloatingOverlayServiceChannel"
@@ -60,7 +62,8 @@ class FloatingOverlayService : Service() {
             pMile: String, pMileColor: Int,
             pHour: String, pHourColor: Int,
             miles: String,
-            minutes: String
+            minutes: String,
+            profit: String, profitColor: Int
         ) {
             instance?.serviceScope?.launch {
                 instance?.floatingView?.visibility = View.VISIBLE
@@ -73,6 +76,8 @@ class FloatingOverlayService : Service() {
                 instance?.tvPHourValue?.setTextColor(pHourColor)
                 instance?.tvMilesValue?.text = miles
                 instance?.tvTimeValue?.text = minutes
+                instance?.tvProfitLossValue?.text = profit
+                instance?.tvProfitLossValue?.setTextColor(profitColor)
             }
         }
 
@@ -126,6 +131,8 @@ class FloatingOverlayService : Service() {
         tvPHourValue = floatingView!!.findViewById(R.id.tvPHourValue)
         tvMilesValue = floatingView!!.findViewById(R.id.tvMilesValue)
         tvTimeValue = floatingView!!.findViewById(R.id.tvTimeValue)
+        tvProfitLossValue = floatingView!!.findViewById(R.id.tvProfitLossValue)
+
 
         // Set up layout parameters for the overlay window.
         val layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
