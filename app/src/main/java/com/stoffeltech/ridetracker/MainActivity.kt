@@ -43,7 +43,17 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.ActionBarDrawerToggle
 import com.stoffeltech.ridetracker.utils.DirectionsHelper
+import android.provider.Settings
+import android.view.WindowManager
+import com.stoffeltech.ridetracker.hasUsageStatsPermission
+import android.service.notification.NotificationListenerService
+import android.text.TextUtils
 
+fun isNotificationAccessEnabled(context: Context): Boolean {
+    val pkgName = context.packageName
+    val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+    return !TextUtils.isEmpty(flat) && flat.contains(pkgName)
+}
 
 class RideTrackerApplication : Application() {
     override fun onCreate() {
@@ -72,6 +82,8 @@ fun getColorWithOpacity(color: Int, opacityPercent: Int): Int {
 
 private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 private val SCREEN_CAPTURE_REQUEST_CODE = 2001
+private const val STORAGE_PERMISSION_REQUEST_CODE = 1001
+
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
@@ -163,6 +175,34 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        if (!isNotificationAccessEnabled(this)) {
+            Toast.makeText(this, "Please grant notification access to enable ride forwarding.", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+
+        if (!hasUsageStatsPermission(this)) {
+            Toast.makeText(
+                this,
+                "Please grant usage access permission for proper functionality.",
+                Toast.LENGTH_LONG
+            ).show()
+            // Launch the Usage Access Settings so the user can enable it.
+            val intent = Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            startActivity(intent)
+        }
+        // Check for WRITE_EXTERNAL_STORAGE permission (for API < Q)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                    STORAGE_PERMISSION_REQUEST_CODE
+                )
+            }
+        }
 
         // Set up the toolbar and enable the drawer toggle
         val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)

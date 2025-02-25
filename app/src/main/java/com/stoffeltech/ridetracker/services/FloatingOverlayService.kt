@@ -152,6 +152,9 @@ class FloatingOverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         floatingView = LayoutInflater.from(this).inflate(R.layout.floating_overlay, null)
 
+        // Set initial visibility to GONE so the overlay doesn't show immediately.
+        floatingView?.visibility = View.GONE
+
         // Get the container from your layout. Your root element has id "overlayRoot".
         overlayContainer = floatingView?.findViewById(R.id.overlayRoot)
         // Fallback: if not found and the root is a ViewGroup.
@@ -305,7 +308,9 @@ class FloatingOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        floatingView?.let { windowManager.removeView(it) }
+        if (floatingView != null) {
+            windowManager.removeView(floatingView)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

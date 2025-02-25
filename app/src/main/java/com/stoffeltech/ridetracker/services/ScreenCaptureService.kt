@@ -36,7 +36,13 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-
+import android.graphics.Bitmap
+import android.os.Environment
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 class ScreenCaptureService : Service() {
@@ -50,6 +56,10 @@ class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private var screenshotTaken = false
+    private var lastRequestFingerprint: String? = null
+
+
 
     // Throttle OCR calls to once every second.
     private var lastAIUpdateTime: Long = 0L
@@ -76,6 +86,34 @@ class ScreenCaptureService : Service() {
             stopSelf()
         }
         return START_STICKY
+    }
+    private fun saveBitmapToFile(bitmap: Bitmap, rideType: String) {
+        // Get the public Pictures directory.
+        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        // Create (or reuse) the main folder "Ride Tracker".
+        val appFolder = File(picturesDir, "Ride Tracker")
+        if (!appFolder.exists()) {
+            appFolder.mkdirs()
+        }
+        // Create (or reuse) the subfolder for the ride type.
+        val rideFolder = File(appFolder, rideType)
+        if (!rideFolder.exists()) {
+            rideFolder.mkdirs()
+        }
+        // Generate a unique file name with a timestamp.
+        val dateFormat = SimpleDateFormat("MM-dd-yy_hhmmssa", Locale.getDefault())
+        val timestamp = dateFormat.format(Date())
+        val filename = "${rideType}_${timestamp}.png"
+        val file = File(rideFolder, filename)
+
+        try {
+            FileOutputStream(file).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+            }
+            Log.d("ScreenCaptureService", "Screenshot saved to ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("ScreenCaptureService", "Error saving screenshot: ${e.message}")
+        }
     }
 
     // --- New ML Kit OCR function ---
@@ -201,17 +239,7 @@ class ScreenCaptureService : Service() {
                                     return@launch
                                 }
                                 // At this point, you have a valid rideInfo object.
-                                // Here you’d retrieve or extract the pickup and dropoff location strings, and the action button text.
-                                val isVerified = tripRequestText.contains("Verified", ignoreCase = true)
-                                val pickupAddress = rideInfo.pickupLocation ?: "N/A"
-                                val dropoffAddress = rideInfo.tripLocation ?: "N/A"
-                                val actionButtonText = "Accept"
-
-                                // Log the structured Uber ride request using your helper.
-                                UberParser.logUberRideRequest(rideInfo, pickupAddress, dropoffAddress, actionButtonText, isVerified)
-
-                                // Continue with updating the overlay if needed.
-
+                                val fareVal = rideInfo.fare ?: 0.0
                                 val pickupDistanceVal = rideInfo.pickupDistance ?: 0.0
                                 val tripDistanceVal = rideInfo.tripDistance ?: 0.0
                                 val totalMiles = pickupDistanceVal + tripDistanceVal
@@ -220,13 +248,43 @@ class ScreenCaptureService : Service() {
                                 val tripTimeVal = rideInfo.tripTime ?: 0.0
                                 val totalMinutes = pickupTimeVal + tripTimeVal
 
+                                // Check for the action button keyword.
+                                val validAction = tripRequestText.contains("Accept", ignoreCase = true) ||
+                                        tripRequestText.contains("Match", ignoreCase = true)
 
-                                val fareVal = rideInfo.fare ?: 0.0
+                                // If the ride is a Delivery, we consider it valid if totalMiles and totalMinutes are > 0 and an action is present.
+                                // Otherwise (for other ride types), fare must also be > 0.
+                                if (rideInfo.rideType?.equals("Delivery", ignoreCase = true) == true) {
+                                    if (totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
+                                        FloatingOverlayService.hideOverlay()
+                                        return@launch
+                                    }
+                                } else {
+                                    if (fareVal <= 0.0 || totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
+                                        FloatingOverlayService.hideOverlay()
+                                        return@launch
+                                    }
+                                }
+
+                                // Log the structured Uber ride request using your helper.
+                                UberParser.logUberRideRequest(rideInfo, "", "", "Accept", false)
+
+                                // Continue with updating the overlay if needed.
+
                                 val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()  // default bonus, adjust as needed
                                 val adjustedFare = fareVal + bonus
+                                val currentFingerprint = "${adjustedFare}_${totalMiles}_${totalMinutes}_${if (validAction) "action" else "noaction"}"
+                                Log.d("ScreenCaptureService", "Current fingerprint: $currentFingerprint, Last fingerprint: $lastRequestFingerprint")
+
+                                if (currentFingerprint != lastRequestFingerprint) {
+                                    val rideType = rideInfo.rideType ?: "Unknown"
+                                    saveBitmapToFile(rawBitmap, rideType)
+                                    lastRequestFingerprint = currentFingerprint
+                                    Log.d("ScreenCaptureService", "New request detected, screenshot saved with ride type: $rideType")
+                                } else {
+                                    Log.d("ScreenCaptureService", "Request fingerprint unchanged, no screenshot saved")
+                                }
                                 val adjustedFareStr = String.format("%.2f", adjustedFare)
-
-
 
                                 // If no valid ride is detected, auto-vanish the overlay.
                                 if (totalMiles <= 0.0 && totalMinutes <= 0.0 && adjustedFare <= 0.0) {
@@ -364,6 +422,7 @@ class ScreenCaptureService : Service() {
         virtualDisplay?.release()
         mediaProjection?.stop()
         imageReader?.close()
+        screenshotTaken = false
         Log.d("ScreenCaptureService", "Screen capture stopped")
     }
 
