@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
+import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
@@ -45,6 +46,10 @@ class FloatingOverlayService : Service() {
     lateinit var tvMilesValue: TextView
     lateinit var tvTimeValue: TextView
     lateinit var tvProfitLossValue: TextView
+    lateinit var tvRatingValue: TextView
+    lateinit var tvRatingLabel: TextView
+    lateinit var tvStopsValue: TextView
+
 
     // Variables for dragging.
     private var initialX = 0
@@ -95,6 +100,7 @@ class FloatingOverlayService : Service() {
          * @param miles Total miles string.
          * @param minutes Total minutes string.
          */
+        @SuppressLint("SetTextI18n")
         fun updateOverlay(
             rideType: String,
             fare: String, fareColor: Int,
@@ -102,7 +108,9 @@ class FloatingOverlayService : Service() {
             pHour: String, pHourColor: Int,
             miles: String,
             minutes: String,
-            profit: String, profitColor: Int
+            profit: String, profitColor: Int,
+            rating: String,
+            stops: String
         ) {
             instance?.serviceScope?.launch {
                 instance?.floatingView?.visibility = View.VISIBLE
@@ -117,6 +125,19 @@ class FloatingOverlayService : Service() {
                 instance?.tvTimeValue?.text = minutes
                 instance?.tvProfitLossValue?.text = profit
                 instance?.tvProfitLossValue?.setTextColor(profitColor)
+
+                // Combined Rating/Stops update:
+                Log.d("OverlayUpdate", "rating: $rating, stops: $stops")
+                instance?.tvRatingLabel?.text = "Rating"
+                instance?.tvRatingLabel?.setTextColor(Color.WHITE)
+                instance?.tvRatingValue?.text = rating
+                if (stops.isNotEmpty()) {
+                    // Set the new stops TextView with stops info
+                    instance?.tvStopsValue?.text = stops
+                } else {
+                    instance?.tvStopsValue?.text = ""
+                }
+
             }
         }
 
@@ -174,6 +195,13 @@ class FloatingOverlayService : Service() {
         tvMilesValue = floatingView!!.findViewById(R.id.tvMilesValue)
         tvTimeValue = floatingView!!.findViewById(R.id.tvTimeValue)
         tvProfitLossValue = floatingView!!.findViewById(R.id.tvProfitLossValue)
+        tvRatingValue = floatingView!!.findViewById(R.id.tvRatingValue)
+        tvRatingLabel = floatingView!!.findViewById(R.id.tvRatingLabel)
+        tvStopsValue = floatingView!!.findViewById(R.id.tvStopsValue)
+
+
+
+
 
         // Set up layout parameters.
         layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -200,15 +228,16 @@ class FloatingOverlayService : Service() {
         // Initialize the ScaleGestureDetector to handle pinch-to-zoom.
         scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                // Update the current scale factor.
                 currentScale *= detector.scaleFactor
                 currentScale = currentScale.coerceIn(minScale, maxScale)
-                // Update the window size based on the original dimensions of the container.
-                layoutParams.width = (originalWidth * currentScale).toInt().coerceAtLeast(200)
+                // DO NOT change layoutParams.width – let the XML (wrap_content) determine it.
+                // Only update height:
                 layoutParams.height = (originalHeight * currentScale).toInt().coerceAtLeast(200)
                 windowManager.updateViewLayout(floatingView, layoutParams)
-                // Instead of applying a raw scale transform, update each text size.
+                // Update text sizes:
                 updateTextSizes(currentScale)
+                // Request layout so that the overlay re-measures its width based on new text sizes.
+                floatingView?.requestLayout()
                 return true
             }
         })

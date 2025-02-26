@@ -45,6 +45,8 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.stoffeltech.ridetracker.services.RideInfo
+
 
 
 class ScreenCaptureService : Service() {
@@ -90,7 +92,7 @@ class ScreenCaptureService : Service() {
         if (resultCode == Activity.RESULT_OK && data != null) {
             startScreenCapture(resultCode, data)
         } else {
-//            Log.e("ScreenCaptureService", "Invalid result code or data")
+            Log.e("ScreenCaptureService", "Invalid result code or data")
             stopSelf()
         }
         return START_STICKY
@@ -359,7 +361,9 @@ class ScreenCaptureService : Service() {
                                     miles = formattedTotalMiles,
                                     minutes = formattedTotalMinutes,
                                     profit = profitStr,
-                                    profitColor = profitColorInt
+                                    profitColor = profitColorInt,
+                                    rating = rideInfo.rating?.toString() ?: "N/A",
+                                    stops = rideInfo.stops ?: ""
                                 )
                             } catch (e: Exception) {
                                 // Optionally log the error.
@@ -390,17 +394,6 @@ class ScreenCaptureService : Service() {
         )
         Log.d("ScreenCaptureService", "Screen capture started")
     }
-
-    // --- Ride Info Parsing ---
-    data class RideInfo(
-        val rideType: String?,
-        val fare: Double?,
-        val rating: Double?,
-        val pickupTime: Double?,
-        val pickupDistance: Double?,
-        val tripTime: Double?,
-        val tripDistance: Double?
-    )
 
     private fun parseRideInfo(text: String): com.stoffeltech.ridetracker.services.RideInfo? {
         // Remove header labels.

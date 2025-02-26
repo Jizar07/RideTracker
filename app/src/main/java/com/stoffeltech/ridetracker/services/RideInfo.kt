@@ -9,5 +9,6 @@ data class RideInfo(
     val tripTime: Double?,
     val tripDistance: Double?,
     val pickupLocation: String?,
-    val tripLocation: String?
+    val tripLocation: String?,
+    val stops: String?
 )

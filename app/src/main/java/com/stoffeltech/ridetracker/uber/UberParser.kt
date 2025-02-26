@@ -34,6 +34,7 @@ object UberParser {
         // Line 3: Rating (append " (Verified)" if the flag is true)
         val ratingText = rideInfo.rating?.toString() ?: "N/A"
         val verifiedText = if (verified) " (Verified)" else ""
+
         sb.appendLine("Rating: $ratingText$verifiedText")
 
         // Line 4: Pickup info
@@ -47,6 +48,10 @@ object UberParser {
 
         // Line 7: Dropoff location (again, may be multi-line)
         sb.appendLine("Dropoff Location: $dropoffLocation")
+
+        // Add stops info:
+        val stopsText = if (rideInfo.stops?.isNotEmpty() == true) rideInfo.stops else "None"
+        sb.appendLine("Stops: $stopsText")
 
         // Bottom line: Action button (Accept or Match)
         sb.appendLine("Action Button: $actionButton")
@@ -90,6 +95,20 @@ object UberParser {
             }
         }
 
+        // This regex matches an optional leading number and whitespace,
+// then "Multiple stops" where each "l" can be either 'l' or '1'.
+        val multipleStopsRegex = Regex("^(?:\\d+\\s*)?[Mm]u(?:l|1)tip(?:l|1)e stops\$", RegexOption.IGNORE_CASE)
+        var stopsValue = ""
+        for (line in lines) {
+            val trimmedLine = line.trim()
+            if (trimmedLine.isEmpty()) continue
+            if (multipleStopsRegex.matches(trimmedLine)) {
+                stopsValue = "Multiple stops"
+                break
+            }
+        }
+        Log.d("UberParser", "stops value calculated: '$stopsValue'")
+
         // Fallback: If no ride type found above and corrected text contains "Delivery", set rideType.
         if (rideType == null && !rideTypeRegex.containsMatchIn(correctedText) && correctedText.contains("Delivery", ignoreCase = true)) {
             rideType = "Delivery"
@@ -121,8 +140,6 @@ object UberParser {
                 }
             }
 
-//            Log.d("UberParser", "Delivery parsing: rideType=$rideType, rawFare=$rawFare, adjustedFare=$fareVal, totalTime=$totalTime, totalDistance=$totalDistance")
-
             return RideInfo(
                 rideType = rideType,
                 fare = fareVal,
@@ -132,7 +149,8 @@ object UberParser {
                 pickupLocation = null,
                 tripTime = null,
                 tripDistance = null,
-                tripLocation = null
+                tripLocation = null,
+                stops = stopsValue
             )
         }
 
@@ -222,7 +240,8 @@ object UberParser {
             pickupLocation = pickupAddress,
             tripTime = tripTimeVal,
             tripDistance = tripDistanceVal,
-            tripLocation = dropoffAddress
+            tripLocation = dropoffAddress,
+            stops = stopsValue
         )
     }
 }

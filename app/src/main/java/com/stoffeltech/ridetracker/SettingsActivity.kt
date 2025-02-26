@@ -21,6 +21,7 @@ class SettingsActivity : AppCompatActivity() {
         const val KEY_FARE_HIGH = "pref_fare_high"             // default: 10.0
         const val KEY_BONUS_RIDE = "pref_bonus_ride"
         const val KEY_COST_DRIVING = "pref_cost_driving"
+        const val KEY_RATING_THRESHOLD = "pref_rating_threshold" // default: 4.70
 
     }
 

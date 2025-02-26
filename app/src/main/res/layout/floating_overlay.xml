@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/overlayRoot"
     android:layout_width="wrap_content"
@@ -192,24 +193,22 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Row 3: Ride Type and Close Button -->
-    <LinearLayout
+    <!-- Row 3: Ride Type, Combined Rating/Stops, and Close Button -->
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/row3"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
         android:paddingHorizontal="8dp">
 
         <!-- Ride Type Block -->
         <LinearLayout
+            android:id="@+id/rideTypeBlock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
-            android:gravity="center_horizontal"
-            android:orientation="vertical">
-
+            android:orientation="vertical"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
             <TextView
                 android:id="@+id/tvRideTypeLabel"
                 android:layout_width="wrap_content"
@@ -219,38 +218,69 @@
                 android:textColor="@color/white"
                 android:textSize="12sp"
                 android:textStyle="bold" />
-
             <TextView
                 android:id="@+id/tvRideTypeValue"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:singleLine="true"
+                android:maxLines="2"
                 android:text="Unknown"
                 android:textColor="@color/quantum_lightblueA400"
                 android:textSize="20sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- Close Button Block -->
+        <!-- Combined Rating/Stops Block -->
         <LinearLayout
+            android:id="@+id/ratingBlock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="center">
-
+            android:orientation="vertical"
+            app:layout_constraintStart_toEndOf="@id/rideTypeBlock"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/btnCloseOverlay"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp">
+            <TextView
+                android:id="@+id/tvRatingLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Rating"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:textSize="12sp" />
+            <TextView
+                android:id="@+id/tvRatingValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:text="N/A"
+                android:textSize="20sp" />
+            <!-- New TextView for stops -->
+            <TextView
+                android:id="@+id/tvStopsValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:text=""
+                android:textSize="16sp"
+                android:textColor="#D00606" />
         </LinearLayout>
 
+        <!-- Close Button -->
         <Button
             android:id="@+id/btnCloseOverlay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:backgroundTintMode="add"
-            android:ellipsize="end"
-            android:singleLine="true"
             android:text="close"
             android:textSize="12sp"
             app:cornerRadius="20dp"
-            app:iconTintMode="add" />
-    </LinearLayout>
+            app:iconTintMode="add"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
 
 </LinearLayout>
