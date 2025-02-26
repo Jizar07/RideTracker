@@ -38,7 +38,7 @@
         tools:ignore="ForegroundServicePermission">
 
         <service
-            android:name=".UberNotificationListenerService"
+            android:name=".services.UberNotificationListenerService"
             android:exported="true"
             android:label="Uber Notification Listener"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
@@ -57,7 +57,7 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
         <service
-            android:name=".RideRequestMessagingService"
+            android:name=".services.RideRequestMessagingService"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />

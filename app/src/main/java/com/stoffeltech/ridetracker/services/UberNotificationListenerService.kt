@@ -1,8 +1,9 @@
-package com.stoffeltech.ridetracker
+package com.stoffeltech.ridetracker.services
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.stoffeltech.ridetracker.utils.bringUberDriverToForeground
 
 class UberNotificationListenerService : NotificationListenerService() {
 

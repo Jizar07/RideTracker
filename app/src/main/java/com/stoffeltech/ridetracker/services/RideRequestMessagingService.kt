@@ -1,8 +1,9 @@
-package com.stoffeltech.ridetracker
+package com.stoffeltech.ridetracker.services
 
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.stoffeltech.ridetracker.utils.bringUberDriverToForeground
 
 class RideRequestMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(remoteMessage: RemoteMessage) {

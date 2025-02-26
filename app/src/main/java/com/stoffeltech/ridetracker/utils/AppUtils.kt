@@ -1,4 +1,4 @@
-package com.stoffeltech.ridetracker
+package com.stoffeltech.ridetracker.utils
 
 import android.app.usage.UsageStatsManager
 import android.content.Context

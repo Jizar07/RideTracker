@@ -38,6 +38,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import android.graphics.Bitmap
 import android.os.Environment
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -58,6 +60,12 @@ class ScreenCaptureService : Service() {
     private var imageReader: ImageReader? = null
     private var screenshotTaken = false
     private var lastRequestFingerprint: String? = null
+    private var isProcessingFrame: Boolean = false
+    private var pendingScreenshot: Boolean = false
+    private var pendingRideType: String = "Unknown"
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
 
 
 
@@ -82,7 +90,7 @@ class ScreenCaptureService : Service() {
         if (resultCode == Activity.RESULT_OK && data != null) {
             startScreenCapture(resultCode, data)
         } else {
-            Log.e("ScreenCaptureService", "Invalid result code or data")
+//            Log.e("ScreenCaptureService", "Invalid result code or data")
             stopSelf()
         }
         return START_STICKY
@@ -165,8 +173,8 @@ class ScreenCaptureService : Service() {
         // Create an ImageReader to capture frames.
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         imageReader?.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage()
-            if (image != null) {
+            while (true) {
+                val image = reader.acquireLatestImage() ?: break  // Break if no image available
                 try {
                     val imgWidth = image.width
                     val imgHeight = image.height
@@ -183,23 +191,37 @@ class ScreenCaptureService : Service() {
                         Bitmap.Config.ARGB_8888
                     )
                     rawBitmap.copyPixelsFromBuffer(buffer)
-
+                    if (pendingScreenshot) {
+                        // Save the current frame with overlay
+                        saveBitmapToFile(rawBitmap, pendingRideType)
+                        pendingScreenshot = false  // Clear the flag so we don't save repeatedly
+                        // (Optionally, you could continue here if you do not want further processing on this frame)
+                    }
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastAIUpdateTime > 1_000) {
+                        // If a frame is already processing, skip processing this one.
+                        if (isProcessingFrame) {
+                            continue
+                        }
                         lastAIUpdateTime = currentTime
+                        isProcessingFrame = true
 
-                        CoroutineScope(Dispatchers.IO).launch {
+                        serviceScope.launch {
                             try {
-                                // Create an InputImage from the rawBitmap for ML Kit processing.
+                                // Create an InputImage for ML Kit.
                                 val imageForText = InputImage.fromBitmap(rawBitmap, 0)
                                 val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                                 val prefs = PreferenceManager.getDefaultSharedPreferences(this@ScreenCaptureService)
                                 val visionText = recognizer.process(imageForText).await()
+                                val ocrLines = visionText.text.split("\n")
+                                ocrLines.forEachIndexed { index, line ->
+                                    Log.d("OCROutput", "OCR Line ${index + 1}: $line")
+                                }
                                 val rideTypeBlocks = visionText.textBlocks.filter { block ->
-                                    block.text.contains("Uber", ignoreCase = true) || block.text.contains("Delivery", ignoreCase = true)
+                                    block.text.contains("Uber", ignoreCase = true) ||
+                                            block.text.contains("Delivery", ignoreCase = true)
                                 }
                                 val minTop = if (rideTypeBlocks.isNotEmpty()) {
-                                    // Get the smallest top coordinate among the ride type blocks.
                                     rideTypeBlocks.minOf { it.boundingBox?.top ?: Int.MAX_VALUE }
                                 } else {
                                     0
@@ -208,8 +230,6 @@ class ScreenCaptureService : Service() {
                                     .filter { (it.boundingBox?.top ?: 0) >= minTop }
                                     .joinToString("\n") { it.text }
                                 val fixedText = filteredText.replace("l", "1").replace("L", "1")
-
-
 
                                 // --- Improved block extraction logic ---
                                 val blocks = fixedText.split("\n").fold(mutableListOf<StringBuilder>()) { acc, line ->
@@ -221,16 +241,13 @@ class ScreenCaptureService : Service() {
                                     acc
                                 }.map { it.toString().trim() }.filter { it.isNotEmpty() }
 
-                                // Define required keywords for the trip request block.
                                 val requiredKeywords = listOf("\\$", "mi", "mins", "trip", "away", "Verified", "Accept", "Match")
                                 val candidateBlocks = blocks.filter { block ->
                                     requiredKeywords.all { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(block) }
                                 }
-                                // Choose the candidate block with the highest total count of required keywords.
                                 val tripRequestText = candidateBlocks.maxByOrNull { block ->
                                     requiredKeywords.sumOf { Regex(it, RegexOption.IGNORE_CASE).findAll(block).count() }
                                 } ?: fixedText
-//                                Log.d("ScreenCaptureService", "Trip request block text: $tripRequestText")
                                 // --- End improved block extraction logic ---
 
                                 val rideInfo = parseRideInfo(tripRequestText)
@@ -238,7 +255,6 @@ class ScreenCaptureService : Service() {
                                     FloatingOverlayService.hideOverlay()
                                     return@launch
                                 }
-                                // At this point, you have a valid rideInfo object.
                                 val fareVal = rideInfo.fare ?: 0.0
                                 val pickupDistanceVal = rideInfo.pickupDistance ?: 0.0
                                 val tripDistanceVal = rideInfo.tripDistance ?: 0.0
@@ -248,12 +264,9 @@ class ScreenCaptureService : Service() {
                                 val tripTimeVal = rideInfo.tripTime ?: 0.0
                                 val totalMinutes = pickupTimeVal + tripTimeVal
 
-                                // Check for the action button keyword.
                                 val validAction = tripRequestText.contains("Accept", ignoreCase = true) ||
                                         tripRequestText.contains("Match", ignoreCase = true)
 
-                                // If the ride is a Delivery, we consider it valid if totalMiles and totalMinutes are > 0 and an action is present.
-                                // Otherwise (for other ride types), fare must also be > 0.
                                 if (rideInfo.rideType?.equals("Delivery", ignoreCase = true) == true) {
                                     if (totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
                                         FloatingOverlayService.hideOverlay()
@@ -266,27 +279,19 @@ class ScreenCaptureService : Service() {
                                     }
                                 }
 
-                                // Log the structured Uber ride request using your helper.
                                 UberParser.logUberRideRequest(rideInfo, "", "", "Accept", false)
 
-                                // Continue with updating the overlay if needed.
-
-                                val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()  // default bonus, adjust as needed
+                                val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
                                 val adjustedFare = fareVal + bonus
-                                val currentFingerprint = "${adjustedFare}_${totalMiles}_${totalMinutes}_${if (validAction) "action" else "noaction"}"
-                                Log.d("ScreenCaptureService", "Current fingerprint: $currentFingerprint, Last fingerprint: $lastRequestFingerprint")
+                                val adjustedFareStr = String.format("%.2f", adjustedFare)
+                                val currentFingerprint = adjustedFareStr
 
                                 if (currentFingerprint != lastRequestFingerprint) {
-                                    val rideType = rideInfo.rideType ?: "Unknown"
-                                    saveBitmapToFile(rawBitmap, rideType)
+                                    pendingRideType = rideInfo.rideType ?: "Unknown"
+                                    pendingScreenshot = true
                                     lastRequestFingerprint = currentFingerprint
-                                    Log.d("ScreenCaptureService", "New request detected, screenshot saved with ride type: $rideType")
-                                } else {
-                                    Log.d("ScreenCaptureService", "Request fingerprint unchanged, no screenshot saved")
                                 }
-                                val adjustedFareStr = String.format("%.2f", adjustedFare)
 
-                                // If no valid ride is detected, auto-vanish the overlay.
                                 if (totalMiles <= 0.0 && totalMinutes <= 0.0 && adjustedFare <= 0.0) {
                                     FloatingOverlayService.hideOverlay()
                                     return@launch
@@ -300,19 +305,16 @@ class ScreenCaptureService : Service() {
                                 val formattedTotalMiles = String.format("%.1f", totalMiles)
                                 val formattedTotalMinutes = String.format("%.1f", totalMinutes)
 
-                                // Load threshold values from SharedPreferences (using the keys defined in SettingsActivity)
                                 val acceptPerMile = prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f).toDouble()
                                 val declinePerMile = prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f).toDouble()
                                 val acceptPerHour = prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f).toDouble()
                                 val declinePerHour = prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f).toDouble()
                                 val fareLow = prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f).toDouble()
                                 val fareHigh = prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f).toDouble()
-                                val costPerMile = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f).toDouble()  // default $0.20 per mile
+                                val costPerMile = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f).toDouble()
                                 val profit = adjustedFare - (costPerMile * totalMiles)
                                 val profitStr = String.format("$%.2f", profit)
                                 val profitColorInt = if (profit >= 0) Color.GREEN else Color.RED
-
-
 
                                 val pmileColor = when {
                                     pricePerMile < declinePerMile -> "red"
@@ -327,11 +329,9 @@ class ScreenCaptureService : Service() {
                                 val fareColor = when {
                                     adjustedFare < fareLow  -> "red"
                                     adjustedFare < fareHigh -> "yellow"
-                                    else               -> "green"
+                                    else                    -> "green"
                                 }
 
-
-                                // Convert color string to actual color int
                                 val fareColorInt = when (fareColor) {
                                     "red" -> Color.RED
                                     "yellow" -> Color.YELLOW
@@ -348,7 +348,6 @@ class ScreenCaptureService : Service() {
                                     else -> Color.GREEN
                                 }
 
-                                // Update the overlay with the new separate values:
                                 FloatingOverlayService.updateOverlay(
                                     rideType = rideInfo.rideType ?: "Unknown",
                                     fare = "${'$'}$adjustedFareStr",
@@ -362,19 +361,22 @@ class ScreenCaptureService : Service() {
                                     profit = profitStr,
                                     profitColor = profitColorInt
                                 )
-
                             } catch (e: Exception) {
-                                Log.e("ScreenCaptureService", "MLKit OCR processing error: ${e.message}")
+                                // Optionally log the error.
+                            } finally {
+                                // Reset the flag once processing is complete.
+                                isProcessingFrame = false
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("ScreenCaptureService", "Error processing image: ${e.message}")
+                    // Optionally log error processing this image.
                 } finally {
                     image.close()
                 }
             }
         }, Handler(Looper.getMainLooper()))
+
 
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "ScreenCapture",
@@ -418,6 +420,7 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel()
         isRunning = false
         virtualDisplay?.release()
         mediaProjection?.stop()

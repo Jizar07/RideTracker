@@ -1,6 +1,5 @@
 package com.stoffeltech.ridetracker
 
-import com.stoffeltech.ridetracker.BuildConfig
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -45,8 +44,7 @@ import androidx.appcompat.app.ActionBarDrawerToggle
 import com.stoffeltech.ridetracker.utils.DirectionsHelper
 import android.provider.Settings
 import android.view.WindowManager
-import com.stoffeltech.ridetracker.hasUsageStatsPermission
-import android.service.notification.NotificationListenerService
+import com.stoffeltech.ridetracker.utils.hasUsageStatsPermission
 import android.text.TextUtils
 
 fun isNotificationAccessEnabled(context: Context): Boolean {
@@ -144,7 +142,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 } else {
                     // No significant movement; check the inactivity duration.
                     val currentTime = System.currentTimeMillis()
-                    Log.d("MainActivity", "No significant movement. Inactivity duration: ${currentTime - lastMovementTime} ms")
+//                    Log.d("MainActivity", "No significant movement. Inactivity duration: ${currentTime - lastMovementTime} ms")
                     if (!poiTriggered && (currentTime - lastMovementTime) >= INACTIVITY_DURATION_MS) {
                         poiTriggered = true
                         onRideFinished()
@@ -168,7 +166,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             startService(overlayIntent)
         }
-        Log.d("MainActivity", "FloatingOverlayService started.")
+//        Log.d("MainActivity", "FloatingOverlayService started.")
     }
 
     @SuppressLint("MissingInflatedId")
@@ -235,7 +233,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         val isScreenRecordingGranted = prefs.getBoolean("screen_recording_granted", false)
-        Log.d("MainActivity", "isScreenRecordingGranted: $isScreenRecordingGranted")
+//        Log.d("MainActivity", "isScreenRecordingGranted: $isScreenRecordingGranted")
         if (!isScreenRecordingGranted) {
             // Request permission only if not already granted
             requestScreenCapturePermission()
@@ -245,7 +243,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         if (ScreenCaptureService.isRunning) {
             // Service is already active; no need to request permission again.
-            Log.d("MainActivity", "ScreenCaptureService is running; skipping permission request.")
+//            Log.d("MainActivity", "ScreenCaptureService is running; skipping permission request.")
             startScreenCaptureService() // Optionally, ensure it's running
         } else {
             // If not running, then request permission
@@ -307,10 +305,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     MapStyleOptions.loadRawResourceStyle(this, R.raw.dark_map_style)
                 )
                 if (!success) {
-                    Log.e("MainActivity", "Style parsing failed.")
+//                    Log.e("MainActivity", "Style parsing failed.")
                 }
             } catch (e: Exception) {
-                Log.e("MainActivity", "Can't find style. Error: ", e)
+//                Log.e("MainActivity", "Can't find style. Error: ", e)
             }
         }
         // Disable auto camera updates if user interacts
@@ -358,8 +356,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Called when inactivity is detected (ride is finished)
     private fun onRideFinished() {
-        Log.d("MainActivity", "onRideFinished() called")
-        Log.d("MainActivity", "Inactivity detected. Fetching POIs.")
+//        Log.d("MainActivity", "onRideFinished() called")
+//        Log.d("MainActivity", "Inactivity detected. Fetching POIs.")
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED &&
             ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -369,7 +367,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         fusedLocationClient.lastLocation.addOnSuccessListener { location ->
             if (location != null) {
-                Log.d("MainActivity", "Retrieved last location: ${location.latitude}, ${location.longitude}")
+//                Log.d("MainActivity", "Retrieved last location: ${location.latitude}, ${location.longitude}")
                 val currentLatLng = LatLng(location.latitude, location.longitude)
 
                 // Launch a coroutine to call the suspend function fetchNearbyPOIs
@@ -497,7 +495,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     }
                 }
             } else {
-                Log.d("MainActivity", "Current location is null.")
+//                Log.d("MainActivity", "Current location is null.")
             }
         }
     }
@@ -530,7 +528,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     startService(serviceIntent)
                 }
             } else {
-                Log.e("MainActivity", "Screen capture permission denied or no data")
+//                Log.e("MainActivity", "Screen capture permission denied or no data")
             }
         }
     }
@@ -538,7 +536,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onDestroy()
         if (isFinishing) {
             stopService(Intent(this, ScreenCaptureService::class.java))
-            Log.d("MainActivity", "ScreenCaptureService stopped because app is closing.")
+//            Log.d("MainActivity", "ScreenCaptureService stopped because app is closing.")
         }
     }
 }
