@@ -228,7 +228,7 @@ class ScreenCaptureService : Service() {
                                     val visionText = recognizer.process(imageForText).await()
                                     val ocrLines = visionText.text.split("\n")
                                     ocrLines.forEachIndexed { index, line ->
-                                    Log.d("OCROutput", "OCR Line ${index + 1}: $line")
+//                                    Log.d("OCROutput", "OCR Line ${index + 1}: $line")
                                     }
                                     val rideTypeBlocks = visionText.textBlocks.filter { block ->
                                         block.text.contains("Uber", ignoreCase = true) ||

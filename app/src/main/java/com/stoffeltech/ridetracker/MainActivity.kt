@@ -55,6 +55,12 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import android.content.ComponentName
+import android.os.Looper
+import com.stoffeltech.ridetracker.utils.TimeTracker
+import android.os.Handler
+import android.widget.ImageView
+import com.stoffeltech.ridetracker.utils.DistanceTracker
+import androidx.appcompat.app.AppCompatDelegate
 
 
 
@@ -113,9 +119,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Single PlacesClient instance (reused throughout the activity)
     private lateinit var placesClient: PlacesClient
+    private lateinit var tvCurrentSpeed: TextView
+    private lateinit var ivModeSwitch: ImageView
+
+
 
     // Flag to control automatic camera updates
     private var shouldUpdateCamera = true
+    private var currentBearing: Float = 0f
+
 
     // Variables for inactivity detection
     private var lastMovementTime: Long = 0L
@@ -130,7 +142,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // Threshold in meters (1 mile) to trigger a new POI fetch when driving.
     private val POI_FETCH_DISTANCE_THRESHOLD = 1609.34 // 1 mile in meters
 
-
     // Callback to receive and process location updates
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
@@ -138,10 +149,31 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             locationResult.lastLocation?.let { location ->
                 val currentLatLng = LatLng(location.latitude, location.longitude)
 
-                // Update the map camera if allowed.
-                if (shouldUpdateCamera) {
-                    mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(currentLatLng, 15f))
+                // Update the DistanceTracker with the new location.
+                DistanceTracker.updateLocation(location)
+
+
+                // Update speed display
+                val speedMps = location.speed  // speed in meters per second
+                val speedMph = speedMps * 2.23694  // convert m/s to mph
+                tvCurrentSpeed.text = String.format("%.2f mph", speedMph)
+
+                // Update the bearing only if speed is above a threshold (e.g., 1 m/s)
+                if (speedMps >= 1f) {
+                    currentBearing = location.bearing
                 }
+
+                // Create a new camera position using the stored currentBearing
+                if (::mMap.isInitialized && shouldUpdateCamera) {
+                    val cameraPosition = com.google.android.gms.maps.model.CameraPosition.Builder()
+                        .target(currentLatLng)
+                        .zoom(18f)
+                        .bearing(currentBearing) // Use last known bearing
+                        .build()
+                    mMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
+                }
+
+
 
                 // Inactivity detection logic.
                 if (previousLocation == null) {
@@ -179,6 +211,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
     }
+
     private fun startOverlayService() {
         val overlayIntent = Intent(this, FloatingOverlayService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -188,12 +221,31 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 //        Log.d("MainActivity", "FloatingOverlayService started.")
     }
+    private lateinit var handler: Handler
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            updateTimeUI()
+            handler.postDelayed(this, 60000)  // update every 60 seconds
+        }
+    }
 
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        tvCurrentSpeed = findViewById(R.id.tvCurrentSpeed)
+        ivModeSwitch = findViewById(R.id.ivModeSwitch)
+
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        ivModeSwitch.setOnClickListener {
+            if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES) {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            } else {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            }
+        }
+
 
         if (!isNotificationAccessEnabled(this)) {
             Toast.makeText(this, "Please grant notification access to enable ride forwarding.", Toast.LENGTH_LONG).show()
@@ -252,7 +304,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     drawerLayout.closeDrawers()  // Close the drawer after selection
                     true  // Indicate that we handled this selection
                 }
-                else -> false  // For other items, do nothing here.
+                R.id.nav_shift_information -> {
+                    startActivity(Intent(this, ShiftInformationActivity::class.java))
+                    drawerLayout.closeDrawers()
+                    true
+                }
+                else -> false
             }
         }
 
@@ -294,9 +351,52 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             startLocationUpdates()
         }
 
+        val ivUber = findViewById<ImageView>(R.id.ivUber)
+        ivUber.setOnClickListener {
+            launchApp("com.ubercab.driver", "com.ubercab.carbon.core.CarbonActivity")
+        }
+
+
+        val ivLyft = findViewById<ImageView>(R.id.ivLyft)
+        ivLyft.setOnClickListener {
+            launchApp("com.lyft.android.driver", "com.lyft.android.driver.app.ui.DriverMainActivity")
+        }
+
+
+
         // [NEW] Start the floating overlay service so the overlay is available
         startOverlayService()
+        // Load saved intervals (if any)
+        TimeTracker.loadIntervals(this)
+        // Start tracking once (only call once per app launch)
+        TimeTracker.startTracking(this)
+        DistanceTracker.loadIntervals(this)
+        DistanceTracker.startTracking()
+
+        updateTimeUI()
     }
+    private fun launchApp(packageName: String, activityClassName: String? = null) {
+    val intent: Intent? = if (activityClassName != null) {
+        // Create an explicit intent using the package and activity class.
+        Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            component = ComponentName(packageName, activityClassName)
+        }
+    } else {
+        packageManager.getLaunchIntentForPackage(packageName)
+    }
+
+    Log.d("LaunchApp", "Launching app with package: $packageName, intent: $intent")
+
+    if (intent != null && intent.resolveActivity(packageManager) != null) {
+        startActivity(intent)
+    } else {
+        Toast.makeText(this, "App not installed or cannot be launched", Toast.LENGTH_SHORT).show()
+    }
+}
+
+
+
     private fun requestScreenCapturePermission() {
         val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val screenCaptureIntent = mediaProjectionManager.createScreenCaptureIntent()
@@ -422,6 +522,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
         fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
+
         isTrackingLocation = true  // Set flag to true after starting updates
     }
 
@@ -577,14 +678,47 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    override fun onPause() {
-        super.onPause()
-        stopLocationUpdates() // Uses the new method we added
-    }
     override fun onResume() {
         super.onResume()
-        startLocationUpdates() // Restart location tracking when resuming
+        // Load saved intervals and update the UI immediately.
+        TimeTracker.loadIntervals(this)
+        updateTimeUI()
+
+        // Initialize handler if not done already.
+        handler = Handler(Looper.getMainLooper())
+        // Start periodic updates.
+        handler.post(updateRunnable)
+
+        // Update ivModeSwitch based on the current night mode.
+        if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES) {
+            // If you have an alternate icon for night mode (e.g., ic_moon), ensure that drawable exists.
+            // For now, if ic_moon is missing, use ic_sun.
+            ivModeSwitch.setImageResource(R.drawable.ic_moon) // Use ic_moon if available.
+        } else {
+            ivModeSwitch.setImageResource(R.drawable.ic_sun)
+        }
     }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(updateRunnable)
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun updateTimeUI() {
+        // Get total time for today in milliseconds
+        val totalMillis = TimeTracker.getTotalTimeForToday()
+        // Convert milliseconds to hours and minutes
+        val hours = totalMillis / (1000 * 60 * 60)
+        val minutes = (totalMillis / (1000 * 60)) % 60
+        val timeText = "${hours}h ${minutes}m"
+        // Update the TextView for time
+        val tvTimeTravelled: TextView = findViewById(R.id.tvTimeTravelled)
+        tvTimeTravelled.text = "Time: $timeText"
+    }
+
+
+
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -613,6 +747,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onDestroy()
         if (isFinishing) {
             stopService(Intent(this, ScreenCaptureService::class.java))
+            // Stop tracking session when leaving app
+            TimeTracker.stopTracking(this)
+            DistanceTracker.stopTracking(this)
 //            Log.d("MainActivity", "ScreenCaptureService stopped because app is closing.")
         }
     }

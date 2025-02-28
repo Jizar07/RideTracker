@@ -113,6 +113,8 @@
             android:windowSoftInputMode="adjustResize|stateHidden"
             android:exported="false"
             android:theme="@style/Theme.RideTracker.NoActionBar" />
+        <activity android:name=".ShiftInformationActivity" />
+
 
     </application>
 </manifest>

@@ -56,7 +56,7 @@ object UberParser {
         // Bottom line: Action button (Accept or Match)
         sb.appendLine("Action Button: $actionButton")
 
-        Log.d("UberRideRequest", sb.toString())
+//        Log.d("UberRideRequest", sb.toString())
     }
 
     fun parse(cleanedText: String): RideInfo? {
@@ -74,7 +74,7 @@ object UberParser {
             .replace(Regex("(?<=\\s|^)[^A-Za-z]*(Delivery)", RegexOption.IGNORE_CASE), "$1")
 
 
-        Log.d("UberParser", "Corrected Text: $correctedText")
+//        Log.d("UberParser", "Corrected Text: $correctedText")
 
         // --- Attempt 1 (Modified) ---
         // Define a strict pattern for a fare line (e.g. "$24.22")
@@ -115,14 +115,14 @@ object UberParser {
 //        Log.d("UberParser", "stops value calculated: '$stopsValue'")
         if (correctedText.contains("Delivery", ignoreCase = true)) {
             rideType = "Delivery"
-            Log.d("UberParserDebug", "Forced override: rideType set to Delivery because correctedText contains 'Delivery'")
+//            Log.d("UberParserDebug", "Forced override: rideType set to Delivery because correctedText contains 'Delivery'")
         }
 
 
         // Fallback: If no ride type found above and corrected text contains "Delivery", set rideType.
         if (rideType == null && !rideTypeRegex.containsMatchIn(correctedText) && correctedText.contains("Delivery", ignoreCase = true)) {
             rideType = "Delivery"
-            Log.d("UberParser", "Fallback: Setting rideType to Delivery based on corrected text")
+//            Log.d("UberParser", "Fallback: Setting rideType to Delivery based on corrected text")
         }
 
         // --- Special handling for Delivery rides ---
