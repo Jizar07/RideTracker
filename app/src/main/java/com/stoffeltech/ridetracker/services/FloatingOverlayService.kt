@@ -21,6 +21,7 @@ import android.view.*
 import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.preference.PreferenceManager
 import com.stoffeltech.ridetracker.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -131,6 +132,14 @@ class FloatingOverlayService : Service() {
                 instance?.tvRatingLabel?.text = "Rating"
                 instance?.tvRatingLabel?.setTextColor(Color.WHITE)
                 instance?.tvRatingValue?.text = rating
+                val prefs = PreferenceManager.getDefaultSharedPreferences(instance!!)
+                val ratingThreshold = prefs.getFloat(com.stoffeltech.ridetracker.SettingsActivity.KEY_RATING_THRESHOLD, 4.70f)
+                val currentRating = rating.toFloatOrNull() ?: 0f
+                if (currentRating >= ratingThreshold) {
+                    instance?.tvRatingValue?.setTextColor(Color.GREEN)
+                } else {
+                    instance?.tvRatingValue?.setTextColor(Color.RED)
+                }
                 if (stops.isNotEmpty()) {
                     // Set the new stops TextView with stops info
                     instance?.tvStopsValue?.text = stops

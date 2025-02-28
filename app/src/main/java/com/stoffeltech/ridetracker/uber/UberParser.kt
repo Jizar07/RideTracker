@@ -68,8 +68,13 @@ object UberParser {
         // Correct common OCR mistakes.
         val correctedText = cleanedText
             .replace("De1ivery", "Delivery", ignoreCase = true)
-            .replace("delive1y", "delivery", ignoreCase = true)
+            .replace("delive1y", "Delivery", ignoreCase = true)
+            .replace("deliv ery", "Delivery", ignoreCase = true) // new correction
             .replace("tota1", "total", ignoreCase = true)
+            .replace(Regex("(?<=\\s|^)[^A-Za-z]*(Delivery)", RegexOption.IGNORE_CASE), "$1")
+
+
+        Log.d("UberParser", "Corrected Text: $correctedText")
 
         // --- Attempt 1 (Modified) ---
         // Define a strict pattern for a fare line (e.g. "$24.22")
@@ -107,12 +112,17 @@ object UberParser {
                 break
             }
         }
-        Log.d("UberParser", "stops value calculated: '$stopsValue'")
+//        Log.d("UberParser", "stops value calculated: '$stopsValue'")
+        if (correctedText.contains("Delivery", ignoreCase = true)) {
+            rideType = "Delivery"
+            Log.d("UberParserDebug", "Forced override: rideType set to Delivery because correctedText contains 'Delivery'")
+        }
+
 
         // Fallback: If no ride type found above and corrected text contains "Delivery", set rideType.
         if (rideType == null && !rideTypeRegex.containsMatchIn(correctedText) && correctedText.contains("Delivery", ignoreCase = true)) {
             rideType = "Delivery"
-//            Log.d("UberParser", "Fallback: Setting rideType to Delivery based on corrected text")
+            Log.d("UberParser", "Fallback: Setting rideType to Delivery based on corrected text")
         }
 
         // --- Special handling for Delivery rides ---

@@ -38,6 +38,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import android.graphics.Bitmap
 import android.os.Environment
+import android.os.HandlerThread
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import java.io.File
@@ -46,6 +47,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.stoffeltech.ridetracker.services.RideInfo
+private lateinit var imageProcessingThread: HandlerThread
+private lateinit var imageProcessingHandler: Handler
+
 
 
 
@@ -78,6 +82,9 @@ class ScreenCaptureService : Service() {
         super.onCreate()
         isRunning = true
         createNotificationChannel()
+        imageProcessingThread = HandlerThread("ImageProcessingThread")
+        imageProcessingThread.start()
+        imageProcessingHandler = Handler(imageProcessingThread.looper)
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Screen Capture")
             .setContentText("Capturing screen in background")
@@ -193,6 +200,13 @@ class ScreenCaptureService : Service() {
                         Bitmap.Config.ARGB_8888
                     )
                     rawBitmap.copyPixelsFromBuffer(buffer)
+                    // Downscale the full-resolution bitmap to half width and height for OCR processing.
+                    val scaledBitmap = Bitmap.createScaledBitmap(
+                        rawBitmap,
+                        rawBitmap.width / 2,
+                        rawBitmap.height / 2,
+                        true  // enable filtering for smoother scaling
+                    )
                     if (pendingScreenshot) {
                         // Save the current frame with overlay
                         saveBitmapToFile(rawBitmap, pendingRideType)
@@ -202,174 +216,172 @@ class ScreenCaptureService : Service() {
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastAIUpdateTime > 1_000) {
                         // If a frame is already processing, skip processing this one.
-                        if (isProcessingFrame) {
-                            continue
-                        }
-                        lastAIUpdateTime = currentTime
-                        isProcessingFrame = true
-
-                        serviceScope.launch {
-                            try {
-                                // Create an InputImage for ML Kit.
-                                val imageForText = InputImage.fromBitmap(rawBitmap, 0)
-                                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                                val prefs = PreferenceManager.getDefaultSharedPreferences(this@ScreenCaptureService)
-                                val visionText = recognizer.process(imageForText).await()
-                                val ocrLines = visionText.text.split("\n")
-                                ocrLines.forEachIndexed { index, line ->
+                        if (!isProcessingFrame) {
+                            lastAIUpdateTime = currentTime
+                            isProcessingFrame = true
+                            serviceScope.launch {
+                                try {
+                                    // Create an InputImage for ML Kit.
+                                    val imageForText = InputImage.fromBitmap(scaledBitmap, 0)
+                                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                                    val prefs = PreferenceManager.getDefaultSharedPreferences(this@ScreenCaptureService)
+                                    val visionText = recognizer.process(imageForText).await()
+                                    val ocrLines = visionText.text.split("\n")
+                                    ocrLines.forEachIndexed { index, line ->
                                     Log.d("OCROutput", "OCR Line ${index + 1}: $line")
-                                }
-                                val rideTypeBlocks = visionText.textBlocks.filter { block ->
-                                    block.text.contains("Uber", ignoreCase = true) ||
-                                            block.text.contains("Delivery", ignoreCase = true)
-                                }
-                                val minTop = if (rideTypeBlocks.isNotEmpty()) {
-                                    rideTypeBlocks.minOf { it.boundingBox?.top ?: Int.MAX_VALUE }
-                                } else {
-                                    0
-                                }
-                                val filteredText = visionText.textBlocks
-                                    .filter { (it.boundingBox?.top ?: 0) >= minTop }
-                                    .joinToString("\n") { it.text }
-                                val fixedText = filteredText.replace("l", "1").replace("L", "1")
-
-                                // --- Improved block extraction logic ---
-                                val blocks = fixedText.split("\n").fold(mutableListOf<StringBuilder>()) { acc, line ->
-                                    if (acc.isEmpty() || line.trim().isEmpty()) {
-                                        acc.add(StringBuilder())
+                                    }
+                                    val rideTypeBlocks = visionText.textBlocks.filter { block ->
+                                        block.text.contains("Uber", ignoreCase = true) ||
+                                                block.text.contains("Delivery", ignoreCase = true)
+                                    }
+                                    val minTop = if (rideTypeBlocks.isNotEmpty()) {
+                                        rideTypeBlocks.minOf { it.boundingBox?.top ?: Int.MAX_VALUE }
                                     } else {
-                                        acc.last().appendLine(line)
+                                        0
                                     }
-                                    acc
-                                }.map { it.toString().trim() }.filter { it.isNotEmpty() }
+                                    val filteredText = visionText.textBlocks
+                                        .filter { (it.boundingBox?.top ?: 0) >= minTop }
+                                        .joinToString("\n") { it.text }
+                                    val fixedText = filteredText.replace("l", "1").replace("L", "1")
 
-                                val requiredKeywords = listOf("\\$", "mi", "mins", "trip", "away", "Verified", "Accept", "Match")
-                                val candidateBlocks = blocks.filter { block ->
-                                    requiredKeywords.all { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(block) }
-                                }
-                                val tripRequestText = candidateBlocks.maxByOrNull { block ->
-                                    requiredKeywords.sumOf { Regex(it, RegexOption.IGNORE_CASE).findAll(block).count() }
-                                } ?: fixedText
-                                // --- End improved block extraction logic ---
+                                    // --- Improved block extraction logic ---
+                                    val blocks = fixedText.split("\n").fold(mutableListOf<StringBuilder>()) { acc, line ->
+                                        if (acc.isEmpty() || line.trim().isEmpty()) {
+                                            acc.add(StringBuilder())
+                                        } else {
+                                            acc.last().appendLine(line)
+                                        }
+                                        acc
+                                    }.map { it.toString().trim() }.filter { it.isNotEmpty() }
 
-                                val rideInfo = parseRideInfo(tripRequestText)
-                                if (rideInfo == null) {
-                                    FloatingOverlayService.hideOverlay()
-                                    return@launch
-                                }
-                                val fareVal = rideInfo.fare ?: 0.0
-                                val pickupDistanceVal = rideInfo.pickupDistance ?: 0.0
-                                val tripDistanceVal = rideInfo.tripDistance ?: 0.0
-                                val totalMiles = pickupDistanceVal + tripDistanceVal
+                                    val requiredKeywords = listOf("\\$", "mi", "mins", "trip", "away", "Verified", "Accept", "Match")
+                                    val candidateBlocks = blocks.filter { block ->
+                                        requiredKeywords.all { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(block) }
+                                    }
+                                    val tripRequestText = candidateBlocks.maxByOrNull { block ->
+                                        requiredKeywords.sumOf { Regex(it, RegexOption.IGNORE_CASE).findAll(block).count() }
+                                    } ?: fixedText
+                                    // --- End improved block extraction logic ---
 
-                                val pickupTimeVal = rideInfo.pickupTime ?: 0.0
-                                val tripTimeVal = rideInfo.tripTime ?: 0.0
-                                val totalMinutes = pickupTimeVal + tripTimeVal
-
-                                val validAction = tripRequestText.contains("Accept", ignoreCase = true) ||
-                                        tripRequestText.contains("Match", ignoreCase = true)
-
-                                if (rideInfo.rideType?.equals("Delivery", ignoreCase = true) == true) {
-                                    if (totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
+                                    val rideInfo = parseRideInfo(tripRequestText)
+                                    if (rideInfo == null) {
                                         FloatingOverlayService.hideOverlay()
                                         return@launch
                                     }
-                                } else {
-                                    if (fareVal <= 0.0 || totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
+                                    val fareVal = rideInfo.fare ?: 0.0
+                                    val pickupDistanceVal = rideInfo.pickupDistance ?: 0.0
+                                    val tripDistanceVal = rideInfo.tripDistance ?: 0.0
+                                    val totalMiles = pickupDistanceVal + tripDistanceVal
+
+                                    val pickupTimeVal = rideInfo.pickupTime ?: 0.0
+                                    val tripTimeVal = rideInfo.tripTime ?: 0.0
+                                    val totalMinutes = pickupTimeVal + tripTimeVal
+
+                                    val validAction = tripRequestText.contains("Accept", ignoreCase = true) ||
+                                            tripRequestText.contains("Match", ignoreCase = true)
+
+                                    if (rideInfo.rideType?.equals("Delivery", ignoreCase = true) == true) {
+                                        if (totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
+                                            FloatingOverlayService.hideOverlay()
+                                            return@launch
+                                        }
+                                    } else {
+                                        if (fareVal <= 0.0 || totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
+                                            FloatingOverlayService.hideOverlay()
+                                            return@launch
+                                        }
+                                    }
+
+                                    UberParser.logUberRideRequest(rideInfo, "", "", "Accept", false)
+
+                                    val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
+                                    val adjustedFare = fareVal + bonus
+                                    val adjustedFareStr = String.format("%.2f", adjustedFare)
+                                    val currentFingerprint = adjustedFareStr
+
+                                    if (currentFingerprint != lastRequestFingerprint) {
+                                        pendingRideType = rideInfo.rideType ?: "Unknown"
+                                        pendingScreenshot = true
+                                        lastRequestFingerprint = currentFingerprint
+                                    }
+
+                                    if (totalMiles <= 0.0 && totalMinutes <= 0.0 && adjustedFare <= 0.0) {
                                         FloatingOverlayService.hideOverlay()
                                         return@launch
                                     }
-                                }
 
-                                UberParser.logUberRideRequest(rideInfo, "", "", "Accept", false)
+                                    val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
+                                    val totalHours = totalMinutes / 60.0
+                                    val pricePerHour = if (totalHours > 0) adjustedFare / totalHours else 0.0
+                                    val formattedPricePerMile = String.format("%.2f", pricePerMile)
+                                    val formattedPricePerHour = String.format("%.2f", pricePerHour)
+                                    val formattedTotalMiles = String.format("%.1f", totalMiles)
+                                    val formattedTotalMinutes = String.format("%.1f", totalMinutes)
 
-                                val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
-                                val adjustedFare = fareVal + bonus
-                                val adjustedFareStr = String.format("%.2f", adjustedFare)
-                                val currentFingerprint = adjustedFareStr
+                                    val acceptPerMile = prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f).toDouble()
+                                    val declinePerMile = prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f).toDouble()
+                                    val acceptPerHour = prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f).toDouble()
+                                    val declinePerHour = prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f).toDouble()
+                                    val fareLow = prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f).toDouble()
+                                    val fareHigh = prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f).toDouble()
+                                    val costPerMile = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f).toDouble()
+                                    val profit = adjustedFare - (costPerMile * totalMiles)
+                                    val profitStr = String.format("$%.2f", profit)
+                                    val profitColorInt = if (profit >= 0) Color.GREEN else Color.RED
 
-                                if (currentFingerprint != lastRequestFingerprint) {
-                                    pendingRideType = rideInfo.rideType ?: "Unknown"
-                                    pendingScreenshot = true
-                                    lastRequestFingerprint = currentFingerprint
-                                }
+                                    val pmileColor = when {
+                                        pricePerMile < declinePerMile -> "red"
+                                        pricePerMile < acceptPerMile  -> "yellow"
+                                        else                          -> "green"
+                                    }
+                                    val phourColor = when {
+                                        pricePerHour < declinePerHour -> "red"
+                                        pricePerHour < acceptPerHour  -> "yellow"
+                                        else                          -> "green"
+                                    }
+                                    val fareColor = when {
+                                        adjustedFare < fareLow  -> "red"
+                                        adjustedFare < fareHigh -> "yellow"
+                                        else                    -> "green"
+                                    }
 
-                                if (totalMiles <= 0.0 && totalMinutes <= 0.0 && adjustedFare <= 0.0) {
-                                    FloatingOverlayService.hideOverlay()
-                                    return@launch
-                                }
+                                    val fareColorInt = when (fareColor) {
+                                        "red" -> Color.RED
+                                        "yellow" -> Color.YELLOW
+                                        else -> Color.GREEN
+                                    }
+                                    val pMileColorInt = when (pmileColor) {
+                                        "red" -> Color.RED
+                                        "yellow" -> Color.YELLOW
+                                        else -> Color.GREEN
+                                    }
+                                    val pHourColorInt = when (phourColor) {
+                                        "red" -> Color.RED
+                                        "yellow" -> Color.YELLOW
+                                        else -> Color.GREEN
+                                    }
 
-                                val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
-                                val totalHours = totalMinutes / 60.0
-                                val pricePerHour = if (totalHours > 0) adjustedFare / totalHours else 0.0
-                                val formattedPricePerMile = String.format("%.2f", pricePerMile)
-                                val formattedPricePerHour = String.format("%.2f", pricePerHour)
-                                val formattedTotalMiles = String.format("%.1f", totalMiles)
-                                val formattedTotalMinutes = String.format("%.1f", totalMinutes)
-
-                                val acceptPerMile = prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f).toDouble()
-                                val declinePerMile = prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f).toDouble()
-                                val acceptPerHour = prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f).toDouble()
-                                val declinePerHour = prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f).toDouble()
-                                val fareLow = prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f).toDouble()
-                                val fareHigh = prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f).toDouble()
-                                val costPerMile = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f).toDouble()
-                                val profit = adjustedFare - (costPerMile * totalMiles)
-                                val profitStr = String.format("$%.2f", profit)
-                                val profitColorInt = if (profit >= 0) Color.GREEN else Color.RED
-
-                                val pmileColor = when {
-                                    pricePerMile < declinePerMile -> "red"
-                                    pricePerMile < acceptPerMile  -> "yellow"
-                                    else                          -> "green"
+                                    FloatingOverlayService.updateOverlay(
+                                        rideType = rideInfo.rideType ?: "Unknown",
+                                        fare = "${'$'}$adjustedFareStr",
+                                        fareColor = fareColorInt,
+                                        pMile = "${'$'}$formattedPricePerMile",
+                                        pMileColor = pMileColorInt,
+                                        pHour = "${'$'}$formattedPricePerHour",
+                                        pHourColor = pHourColorInt,
+                                        miles = formattedTotalMiles,
+                                        minutes = formattedTotalMinutes,
+                                        profit = profitStr,
+                                        profitColor = profitColorInt,
+                                        rating = rideInfo.rating?.toString() ?: "N/A",
+                                        stops = rideInfo.stops ?: ""
+                                    )
+                                } catch (e: Exception) {
+                                    // Optionally log the error.
+                                } finally {
+                                    // Reset the flag once processing is complete.
+                                    isProcessingFrame = false
                                 }
-                                val phourColor = when {
-                                    pricePerHour < declinePerHour -> "red"
-                                    pricePerHour < acceptPerHour  -> "yellow"
-                                    else                          -> "green"
-                                }
-                                val fareColor = when {
-                                    adjustedFare < fareLow  -> "red"
-                                    adjustedFare < fareHigh -> "yellow"
-                                    else                    -> "green"
-                                }
-
-                                val fareColorInt = when (fareColor) {
-                                    "red" -> Color.RED
-                                    "yellow" -> Color.YELLOW
-                                    else -> Color.GREEN
-                                }
-                                val pMileColorInt = when (pmileColor) {
-                                    "red" -> Color.RED
-                                    "yellow" -> Color.YELLOW
-                                    else -> Color.GREEN
-                                }
-                                val pHourColorInt = when (phourColor) {
-                                    "red" -> Color.RED
-                                    "yellow" -> Color.YELLOW
-                                    else -> Color.GREEN
-                                }
-
-                                FloatingOverlayService.updateOverlay(
-                                    rideType = rideInfo.rideType ?: "Unknown",
-                                    fare = "${'$'}$adjustedFareStr",
-                                    fareColor = fareColorInt,
-                                    pMile = "${'$'}$formattedPricePerMile",
-                                    pMileColor = pMileColorInt,
-                                    pHour = "${'$'}$formattedPricePerHour",
-                                    pHourColor = pHourColorInt,
-                                    miles = formattedTotalMiles,
-                                    minutes = formattedTotalMinutes,
-                                    profit = profitStr,
-                                    profitColor = profitColorInt,
-                                    rating = rideInfo.rating?.toString() ?: "N/A",
-                                    stops = rideInfo.stops ?: ""
-                                )
-                            } catch (e: Exception) {
-                                // Optionally log the error.
-                            } finally {
-                                // Reset the flag once processing is complete.
-                                isProcessingFrame = false
                             }
                         }
                     }
@@ -379,7 +391,7 @@ class ScreenCaptureService : Service() {
                     image.close()
                 }
             }
-        }, Handler(Looper.getMainLooper()))
+        }, imageProcessingHandler)
 
 
         virtualDisplay = mediaProjection?.createVirtualDisplay(

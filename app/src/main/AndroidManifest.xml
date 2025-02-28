@@ -20,6 +20,12 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"
         tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"
+        tools:ignore="ScopedStorage" />
+
 
 
 
@@ -34,8 +40,24 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.RideTracker"
+        android:requestLegacyExternalStorage="true"
+        tools:ignore="ExtraText">
         tools:targetApi="31"
         tools:ignore="ForegroundServicePermission">
+
+        <service
+            android:name=".services.AccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
 
         <service
             android:name=".services.UberNotificationListenerService"
@@ -55,7 +77,8 @@
         <service
             android:name=".services.ScreenCaptureService"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection"
+            tools:ignore="ForegroundServicePermission" />
         <service
             android:name=".services.RideRequestMessagingService"
             android:exported="false">

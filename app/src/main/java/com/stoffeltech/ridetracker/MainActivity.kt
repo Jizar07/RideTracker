@@ -35,6 +35,10 @@ import com.stoffeltech.ridetracker.services.ScreenCaptureService
 import com.stoffeltech.ridetracker.services.clusterPlaces
 import com.stoffeltech.ridetracker.services.fetchNearbyPOIs
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.provider.MediaStore
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -46,12 +50,28 @@ import android.provider.Settings
 import android.view.WindowManager
 import com.stoffeltech.ridetracker.utils.hasUsageStatsPermission
 import android.text.TextUtils
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.File
+import android.content.ComponentName
+
+
 
 fun isNotificationAccessEnabled(context: Context): Boolean {
     val pkgName = context.packageName
     val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
     return !TextUtils.isEmpty(flat) && flat.contains(pkgName)
 }
+fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean {
+    val expectedComponentName = ComponentName(context, service)
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    )
+    return enabledServices?.contains(expectedComponentName.flattenToString()) ?: false
+}
+
 
 class RideTrackerApplication : Application() {
     override fun onCreate() {
@@ -178,6 +198,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (!isNotificationAccessEnabled(this)) {
             Toast.makeText(this, "Please grant notification access to enable ride forwarding.", Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+        if (!isAccessibilityServiceEnabled(this, com.stoffeltech.ridetracker.services.AccessibilityService::class.java)) {
+            Toast.makeText(this, "Please enable RideTracker Accessibility Service in Settings.", Toast.LENGTH_LONG).show()
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
         }
 
         if (!hasUsageStatsPermission(this)) {
@@ -327,6 +352,58 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
     }
+    private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            val filePath = getPathFromUri(this, it)
+            if (filePath != null) {
+                Log.d("RideTracker", "📂 File Selected: $filePath")
+                processStoredRideRequest(filePath) // Send to OCR
+            } else {
+                Log.d("RideTracker", "❌ Failed to get file path from URI")
+            }
+        }
+    }
+
+    // Launch file picker
+    private fun selectFileForOCR() {
+        filePickerLauncher.launch("image/*")
+    }
+    private fun getPathFromUri(context: Context, uri: Uri): String? {
+        var filePath: String? = null
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val columnIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                filePath = cursor.getString(columnIndex)
+            }
+        }
+        return filePath
+    }
+    private fun processStoredRideRequest(selectedFilePath: String) {
+        val file = File(selectedFilePath)
+        if (file.exists()) {
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+            recognizeTextFromImage(bitmap)
+        } else {
+            Log.d("RideTracker", "❌ Selected file does not exist: $selectedFilePath")
+        }
+    }
+    private fun recognizeTextFromImage(bitmap: Bitmap) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
+
+        recognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                val extractedText = visionText.text
+                Log.d("RideTracker", "Extracted OCR Text: $extractedText")
+            }
+            .addOnFailureListener { e ->
+                Log.e("RideTracker", "OCR Failed: ${e.message}")
+            }
+    }
+
+
+
+
 
     private var isTrackingLocation = false  // Flag to track location updates
 

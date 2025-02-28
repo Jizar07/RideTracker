@@ -287,7 +287,50 @@
             android:layout_marginTop="8dp"
             android:layout_marginBottom="8dp" />
 
-    <!-- Bonus Challenges -->
+    <!-- Acceptable Rating Setting -->
+    <LinearLayout
+        android:id="@+id/acceptRatingSetting"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/tvAcceptRatingTitle"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Acceptable Rating"
+            android:textColor="@color/black"
+            android:textSize="16sp" />
+        <EditText
+            android:id="@+id/etAcceptRating"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/box_background"
+            android:inputType="numberDecimal"
+            android:textColor="@color/black"
+            android:textColorHint="@color/black"
+            android:padding="8dp"
+            android:minWidth="80dp"
+            android:gravity="end"
+            android:hint="13.0" />
+    </LinearLayout>
+        <TextView
+            android:id="@+id/tvAcceptRatingDesc"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="If the ride rating is equal to or above this value, it will display in green; if below, it will display in red."
+            android:textColor="@color/black"
+            android:textSize="12sp" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Bonus Challenges -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
