@@ -1,6 +1,10 @@
 package com.stoffeltech.ridetracker.uber
 
+import android.graphics.Bitmap
 import android.util.Log
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.stoffeltech.ridetracker.services.RideInfo
 import kotlin.math.abs
 
@@ -57,6 +61,24 @@ object UberParser {
         sb.appendLine("Action Button: $actionButton")
 
 //        Log.d("UberRideRequest", sb.toString())
+    }
+    fun parseRevenueFromImage(bitmap: Bitmap, onResult: (Double?) -> Unit) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val image = InputImage.fromBitmap(bitmap, 0)
+        recognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                val extractedText = visionText.text
+//                Log.d("UberParser", "OCR output for revenue region: $extractedText")
+                // Regex to capture "$" followed by one or more digits, a period, and exactly two digits.
+                val regex = "\\$(\\d+(?:\\.\\d{2})?)".toRegex()
+                val matchResult = regex.find(extractedText)
+                val revenue = matchResult?.groupValues?.get(1)?.toDoubleOrNull()
+                onResult(revenue)
+            }
+            .addOnFailureListener { e ->
+                Log.e("UberParser", "Failed to extract revenue: ${e.message}")
+                onResult(null)
+            }
     }
 
     fun parse(cleanedText: String): RideInfo? {

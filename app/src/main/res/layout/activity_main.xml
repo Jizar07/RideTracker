@@ -33,6 +33,12 @@
             android:gravity="center_vertical"
             android:padding="8dp"
             android:background="#000000">
+            <!-- Vertical Divider -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#B388FF"
+                android:layout_marginHorizontal="8dp" />
 
             <TextView
                 android:id="@+id/tvTimeTravelled"
@@ -42,6 +48,12 @@
                 android:text="Time: --"
                 android:textColor="@android:color/white"
                 android:textSize="12sp" />
+            <!-- Vertical Divider -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#B388FF"
+                android:layout_marginHorizontal="8dp" />
 
             <TextView
                 android:id="@+id/tvDistanceTravelled"
@@ -51,6 +63,12 @@
                 android:text="Distance: --"
                 android:textColor="@android:color/white"
                 android:textSize="12sp" />
+            <!-- Vertical Divider -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#B388FF"
+                android:layout_marginHorizontal="8dp" />
 
             <TextView
                 android:id="@+id/tvEarningPerHour"
@@ -60,6 +78,12 @@
                 android:text="$/Hour: --"
                 android:textColor="@android:color/white"
                 android:textSize="12sp" />
+            <!-- Vertical Divider -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#B388FF"
+                android:layout_marginHorizontal="8dp" />
 
             <TextView
                 android:id="@+id/tvEarningPerMile"
@@ -71,11 +95,77 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
+        <!-- New Earnings Row: Daily, Weekly, Monthly, Yearly Earnings -->
+        <LinearLayout
+            android:id="@+id/llEarningsRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/llStatsTop"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="8dp"
+            android:background="#000000">
+
+            <TextView
+                android:id="@+id/tvDailyEarning"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Daily: $0.00"
+                android:textColor="@android:color/white"
+                android:textSize="12sp" />
+            <!-- Vertical Divider -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#B388FF"
+                android:layout_marginHorizontal="8dp" />
+
+            <TextView
+                android:id="@+id/tvWeeklyEarning"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Weekly: $0.00"
+                android:textColor="@android:color/white"
+                android:textSize="12sp" />
+            <!-- Vertical Divider -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#B388FF"
+                android:layout_marginHorizontal="8dp" />
+
+            <TextView
+                android:id="@+id/tvMonthlyEarning"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Monthly: $0.00"
+                android:textColor="@android:color/white"
+                android:textSize="12sp" />
+            <!-- Vertical Divider -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="#B388FF"
+                android:layout_marginHorizontal="8dp" />
+
+            <TextView
+                android:id="@+id/tvYearlyEarning"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Yearly: $0.00"
+                android:textColor="@android:color/white"
+                android:textSize="12sp" />
+        </LinearLayout>
+
         <!-- Google Map Fragment using SupportMapFragment -->
         <androidx.fragment.app.FragmentContainerView
             android:id="@+id/map"
             android:name="com.google.android.gms.maps.SupportMapFragment"
-            android:layout_below="@id/llStatsTop"
+            android:layout_below="@id/llEarningsRow"
             android:layout_above="@id/aiOutputContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
@@ -128,7 +218,6 @@
                     android:textColor="@android:color/white"
                     android:textSize="12sp"
                     android:gravity="center" />
-
             </LinearLayout>
 
             <!-- Divider -->

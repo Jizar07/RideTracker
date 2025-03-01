@@ -61,8 +61,7 @@ import android.os.Handler
 import android.widget.ImageView
 import com.stoffeltech.ridetracker.utils.DistanceTracker
 import androidx.appcompat.app.AppCompatDelegate
-
-
+import com.stoffeltech.ridetracker.utils.RevenueTracker
 
 fun isNotificationAccessEnabled(context: Context): Boolean {
     val pkgName = context.packageName
@@ -77,7 +76,6 @@ fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean 
     )
     return enabledServices?.contains(expectedComponentName.flattenToString()) ?: false
 }
-
 
 class RideTrackerApplication : Application() {
     override fun onCreate() {
@@ -96,7 +94,6 @@ fun LatLng.toLocation(): Location = Location("").apply {
  * @param opacityPercent The opacity percentage (0 to 100). 100 means fully opaque.
  */
 fun getColorWithOpacity(color: Int, opacityPercent: Int): Int {
-    // Convert percentage to an alpha value between 0 and 255.
     val alpha = (opacityPercent / 100.0 * 255).toInt().coerceIn(0, 255)
     val red = Color.red(color)
     val green = Color.green(color)
@@ -107,7 +104,6 @@ fun getColorWithOpacity(color: Int, opacityPercent: Int): Int {
 private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 private val SCREEN_CAPTURE_REQUEST_CODE = 2001
 private const val STORAGE_PERMISSION_REQUEST_CODE = 1001
-
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
@@ -122,12 +118,20 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var tvCurrentSpeed: TextView
     private lateinit var ivModeSwitch: ImageView
 
+    // Earnings row views (new)
+    private lateinit var tvDailyEarning: TextView
+    private lateinit var tvWeeklyEarning: TextView
+    private lateinit var tvMonthlyEarning: TextView
+    private lateinit var tvYearlyEarning: TextView
+    private lateinit var tvEarningPerHour: TextView
+    private lateinit var tvEarningPerMile: TextView
 
+    private lateinit var tvTimeTravelled: TextView
+    private lateinit var tvDistanceTravelled: TextView
 
     // Flag to control automatic camera updates
     private var shouldUpdateCamera = true
     private var currentBearing: Float = 0f
-
 
     // Variables for inactivity detection
     private var lastMovementTime: Long = 0L
@@ -225,7 +229,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val updateRunnable = object : Runnable {
         override fun run() {
             updateTimeUI()
-            handler.postDelayed(this, 60000)  // update every 60 seconds
+            updateEarningsUI() // Call earnings update periodically
+            handler.postDelayed(this, 60000)
         }
     }
 
@@ -235,6 +240,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         setContentView(R.layout.activity_main)
         tvCurrentSpeed = findViewById(R.id.tvCurrentSpeed)
         ivModeSwitch = findViewById(R.id.ivModeSwitch)
+
+        tvDailyEarning = findViewById(R.id.tvDailyEarning)
+        tvWeeklyEarning = findViewById(R.id.tvWeeklyEarning)
+        tvMonthlyEarning = findViewById(R.id.tvMonthlyEarning)
+        tvYearlyEarning = findViewById(R.id.tvYearlyEarning)
+        tvEarningPerHour = findViewById(R.id.tvEarningPerHour)
+        tvEarningPerMile = findViewById(R.id.tvEarningPerMile)
+        tvTimeTravelled = findViewById(R.id.tvTimeTravelled)
+        tvDistanceTravelled = findViewById(R.id.tvDistanceTravelled)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
@@ -258,13 +272,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
         if (!hasUsageStatsPermission(this)) {
-            Toast.makeText(
-                this,
-                "Please grant usage access permission for proper functionality.",
-                Toast.LENGTH_LONG
-            ).show()
-            // Launch the Usage Access Settings so the user can enable it.
-            val intent = Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            Toast.makeText(this, "Please grant usage access permission for proper functionality.", Toast.LENGTH_LONG).show()
+            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
             startActivity(intent)
         }
         // Check for WRITE_EXTERNAL_STORAGE permission (for API < Q)
@@ -301,8 +310,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 R.id.nav_settings -> {
                     // Launch SettingsActivity when the "Settings" item is selected.
                     startActivity(Intent(this, SettingsActivity::class.java))
-                    drawerLayout.closeDrawers()  // Close the drawer after selection
-                    true  // Indicate that we handled this selection
+                    drawerLayout.closeDrawers()
+                    true
                 }
                 R.id.nav_shift_information -> {
                     startActivity(Intent(this, ShiftInformationActivity::class.java))
@@ -324,9 +333,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             startScreenCaptureService()
         }
         if (ScreenCaptureService.isRunning) {
-            // Service is already active; no need to request permission again.
-//            Log.d("MainActivity", "ScreenCaptureService is running; skipping permission request.")
-            startScreenCaptureService() // Optionally, ensure it's running
+            startScreenCaptureService()
         } else {
             // If not running, then request permission
             requestScreenCapturePermission()
@@ -375,27 +382,23 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         updateTimeUI()
     }
+
     private fun launchApp(packageName: String, activityClassName: String? = null) {
-    val intent: Intent? = if (activityClassName != null) {
-        // Create an explicit intent using the package and activity class.
-        Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-            component = ComponentName(packageName, activityClassName)
+        val intent: Intent? = if (activityClassName != null) {
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                component = ComponentName(packageName, activityClassName)
+            }
+        } else {
+            packageManager.getLaunchIntentForPackage(packageName)
         }
-    } else {
-        packageManager.getLaunchIntentForPackage(packageName)
+        Log.d("LaunchApp", "Launching app with package: $packageName, intent: $intent")
+        if (intent != null && intent.resolveActivity(packageManager) != null) {
+            startActivity(intent)
+        } else {
+            Toast.makeText(this, "App not installed or cannot be launched", Toast.LENGTH_SHORT).show()
+        }
     }
-
-    Log.d("LaunchApp", "Launching app with package: $packageName, intent: $intent")
-
-    if (intent != null && intent.resolveActivity(packageManager) != null) {
-        startActivity(intent)
-    } else {
-        Toast.makeText(this, "App not installed or cannot be launched", Toast.LENGTH_SHORT).show()
-    }
-}
-
-
 
     private fun requestScreenCapturePermission() {
         val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -429,12 +432,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 val success = mMap.setMapStyle(
                     MapStyleOptions.loadRawResourceStyle(this, R.raw.dark_map_style)
                 )
-                if (!success) {
-//                    Log.e("MainActivity", "Style parsing failed.")
-                }
-            } catch (e: Exception) {
-//                Log.e("MainActivity", "Can't find style. Error: ", e)
-            }
+                if (!success) { }
+            } catch (e: Exception) { }
         }
         // Disable auto camera updates if user interacts
         mMap.setOnCameraMoveStartedListener { reason ->
@@ -456,10 +455,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         uri?.let {
             val filePath = getPathFromUri(this, it)
             if (filePath != null) {
-                Log.d("RideTracker", "📂 File Selected: $filePath")
-                processStoredRideRequest(filePath) // Send to OCR
-            } else {
-                Log.d("RideTracker", "❌ Failed to get file path from URI")
+                processStoredRideRequest(filePath)
             }
         }
     }
@@ -483,8 +479,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (file.exists()) {
             val bitmap = BitmapFactory.decodeFile(file.absolutePath)
             recognizeTextFromImage(bitmap)
-        } else {
-            Log.d("RideTracker", "❌ Selected file does not exist: $selectedFilePath")
         }
     }
     private fun recognizeTextFromImage(bitmap: Bitmap) {
@@ -494,26 +488,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
                 val extractedText = visionText.text
-                Log.d("RideTracker", "Extracted OCR Text: $extractedText")
+//                Log.d("RideTracker", "Extracted OCR Text: $extractedText")
             }
             .addOnFailureListener { e ->
                 Log.e("RideTracker", "OCR Failed: ${e.message}")
             }
     }
 
-
-
-
-
-    private var isTrackingLocation = false  // Flag to track location updates
-
+    private var isTrackingLocation = false
     private fun startLocationUpdates() {
-        if (isTrackingLocation) return // Prevents duplicate requests
-
+        if (isTrackingLocation) return
         val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
             com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, 10000L
         ).setMinUpdateIntervalMillis(5000L).build()
-
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED &&
             ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -594,9 +581,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                             val tvInstruction = findViewById<TextView>(R.id.tvNavigationInstruction)
                             val btnNextInstruction = findViewById<Button>(R.id.btnNextInstruction)
                             val btnCancelNavigation = findViewById<Button>(R.id.btnCancelNavigation)
-
-                            btnCancelNavigation.visibility = View.GONE // Hide initially
-
+                            btnCancelNavigation.visibility = View.GONE
                             var navigationPolyline: com.google.android.gms.maps.model.Polyline? = null
                             var instructionIndex = 0
 
@@ -665,15 +650,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                             }
                         } else {
                             aiResponseText.text = "No hotspots found nearby."
-                            btnMapToHotspot.visibility = View.GONE
+                            findViewById<Button>(R.id.btnMapToHotspot).visibility = View.GONE
                         }
-
-
-
                     }
                 }
-            } else {
-//                Log.d("MainActivity", "Current location is null.")
             }
         }
     }
@@ -683,17 +663,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Load saved intervals and update the UI immediately.
         TimeTracker.loadIntervals(this)
         updateTimeUI()
-
-        // Initialize handler if not done already.
+        updateEarningsUI()  // Update earnings row on resume
+        updateEarningsRatesUI()
         handler = Handler(Looper.getMainLooper())
-        // Start periodic updates.
         handler.post(updateRunnable)
-
-        // Update ivModeSwitch based on the current night mode.
         if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES) {
-            // If you have an alternate icon for night mode (e.g., ic_moon), ensure that drawable exists.
-            // For now, if ic_moon is missing, use ic_sun.
-            ivModeSwitch.setImageResource(R.drawable.ic_moon) // Use ic_moon if available.
+            ivModeSwitch.setImageResource(R.drawable.ic_moon)
         } else {
             ivModeSwitch.setImageResource(R.drawable.ic_sun)
         }
@@ -715,6 +690,62 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Update the TextView for time
         val tvTimeTravelled: TextView = findViewById(R.id.tvTimeTravelled)
         tvTimeTravelled.text = "Time: $timeText"
+    }
+
+    private fun updateEarningsUI() {
+        // Load revenue intervals from RevenueTracker.
+        RevenueTracker.loadIntervals(this)
+        val dailyRevenue = RevenueTracker.getDailyRevenue()
+        val weeklyRevenue = RevenueTracker.getWeeklyRevenue()
+        val monthlyRevenue = RevenueTracker.getMonthlyRevenue()
+        val yearlyRevenue = RevenueTracker.getYearlyRevenue()
+
+        // Update the earnings TextViews.
+        tvDailyEarning.text = "Daily: $%.2f".format(dailyRevenue)
+        tvWeeklyEarning.text = "Weekly: $%.2f".format(weeklyRevenue)
+        tvMonthlyEarning.text = "Monthly: $%.2f".format(monthlyRevenue)
+        tvYearlyEarning.text = "Yearly: $%.2f".format(yearlyRevenue)
+
+        // For debugging:
+        Log.d("MainActivity", "Earnings updated: Daily $dailyRevenue, Weekly $weeklyRevenue, Monthly $monthlyRevenue, Yearly $yearlyRevenue")
+    }
+
+    private fun updateEarningsRatesUI() {
+        // Get the daily earnings from RevenueTracker (should be updated via OCR elsewhere)
+        RevenueTracker.loadIntervals(this)
+        val dailyEarnings = RevenueTracker.getDailyRevenue()  // e.g., 395.75
+
+        // Get the current time text from tvTimeTravelled
+        val timeText = tvTimeTravelled.text.toString()  // Expected format: "Time: Xh Ym"
+        // Use a regex to extract hours and minutes
+        val timeRegex = Regex("Time:\\s*(\\d+)h\\s*(\\d+)m")
+        val timeMatch = timeRegex.find(timeText)
+        val hours = if (timeMatch != null) {
+            val h = timeMatch.groupValues[1].toDoubleOrNull() ?: 0.0
+            val m = timeMatch.groupValues[2].toDoubleOrNull() ?: 0.0
+            h + (m / 60.0)
+        } else {
+            0.0
+        }
+
+        // Get the distance text from tvDistanceTravelled
+        val distanceText = tvDistanceTravelled.text.toString()  // Expected format: "Distance: X.XX miles"
+        val distanceRegex = Regex("Distance:\\s*([\\d.]+)\\s*miles")
+        val distanceMatch = distanceRegex.find(distanceText)
+        val miles = distanceMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+
+        // Calculate earnings per hour and per mile
+        val earningsPerHour = if (hours > 0) dailyEarnings / hours else 0.0
+        val earningsPerMile = if (miles > 0) dailyEarnings / miles else 0.0
+
+        // Update the respective TextViews with formatted values.
+        tvEarningPerHour.text = "$/Hour: %.2f".format(earningsPerHour)
+        tvEarningPerMile.text = "$/Mile: %.2f".format(earningsPerMile)
+
+        // Debug logs for verification:
+        Log.d("MainActivity", "Parsed Time: $hours hours from '$timeText'")
+        Log.d("MainActivity", "Parsed Distance: $miles miles from '$distanceText'")
+        Log.d("MainActivity", "Daily Earnings: $dailyEarnings, Earnings per Hour: $earningsPerHour, Earnings per Mile: $earningsPerMile")
     }
 
 
@@ -750,6 +781,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // Stop tracking session when leaving app
             TimeTracker.stopTracking(this)
             DistanceTracker.stopTracking(this)
+            updateEarningsUI()
 //            Log.d("MainActivity", "ScreenCaptureService stopped because app is closing.")
         }
     }

@@ -73,10 +73,10 @@ class AccessibilityService : AccessibilityService() {
         // Use UberParser's advanced parsing to check if the text contains a valid ride request.
         val rideInfo = UberParser.parse(text)
         if (rideInfo != null) {
-            Log.d("RideTracker", "🟢 Detected possible ride request: $text")
+//            Log.d("RideTracker", "🟢 Detected possible ride request: $text")
             processRideRequest(text)
         } else {
-            Log.d("RideTracker", "⚠️ No valid ride request detected on screen.")
+//            Log.d("RideTracker", "⚠️ No valid ride request detected on screen.")
         }
     }
 
@@ -288,7 +288,7 @@ class AccessibilityService : AccessibilityService() {
     private fun dumpNodeTree(node: AccessibilityNodeInfo?, indent: String = "") {
         if (node == null) return
         val nodeInfo = "Class: ${node.className} | Text: ${node.text} | ContentDesc: ${node.contentDescription}"
-        Log.d("RideTracker", "$indent$nodeInfo")
+//        Log.d("RideTracker", "$indent$nodeInfo")
         for (i in 0 until node.childCount) {
             dumpNodeTree(node.getChild(i), "$indent  ")
         }

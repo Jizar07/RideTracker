@@ -6,6 +6,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.app.usage.UsageStats
+import android.app.usage.UsageStatsManager
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.graphics.*
 import android.hardware.display.DisplayManager
@@ -47,11 +51,16 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.stoffeltech.ridetracker.services.RideInfo
+import com.stoffeltech.ridetracker.utils.RevenueTracker
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
+import java.util.TreeMap
+
+
 private lateinit var imageProcessingThread: HandlerThread
 private lateinit var imageProcessingHandler: Handler
-
-
-
 
 class ScreenCaptureService : Service() {
 
@@ -71,11 +80,11 @@ class ScreenCaptureService : Service() {
     private var pendingRideType: String = "Unknown"
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var lastOCRRevenue: Double = 0.0
+    // New variable to throttle revenue OCR extraction calls.
+    private var lastRevenueUpdateTime: Long = 0L
 
-
-
-
-    // Throttle OCR calls to once every second.
+    // Throttle OCR calls for ride info to once every second.
     private var lastAIUpdateTime: Long = 0L
 
     override fun onCreate() {
@@ -104,6 +113,7 @@ class ScreenCaptureService : Service() {
         }
         return START_STICKY
     }
+
     private fun saveBitmapToFile(bitmap: Bitmap, rideType: String) {
         // Get the public Pictures directory.
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
@@ -139,7 +149,6 @@ class ScreenCaptureService : Service() {
         return withContext(Dispatchers.IO) {  // Ensures ML Kit runs in the background
             val image = InputImage.fromBitmap(bitmap, 0)
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
             try {
                 val visionText = recognizer.process(image).await()
                 visionText.text
@@ -149,7 +158,6 @@ class ScreenCaptureService : Service() {
             }
         }
     }
-
     // --- End ML Kit OCR function ---
 
     @SuppressLint("DefaultLocale")
@@ -207,17 +215,40 @@ class ScreenCaptureService : Service() {
                         rawBitmap.height / 2,
                         true  // enable filtering for smoother scaling
                     )
+
+                    // --- Revenue Extraction Logic (For Uber Only) ---
+                    // Throttle revenue OCR extraction to once per second.
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastRevenueUpdateTime > 1_000) {
+                        lastRevenueUpdateTime = currentTime
+                        // Check that the Uber driver app is in the foreground.
+                        if (isAppForeground("com.ubercab.driver")) {
+                            val revenueHeight = (scaledBitmap.height * 0.2).toInt()  // Crop top 20%
+                            val revenueBitmap = Bitmap.createBitmap(scaledBitmap, 0, 0, scaledBitmap.width, revenueHeight)
+                            UberParser.parseRevenueFromImage(revenueBitmap) { extractedRevenue ->
+                                if (extractedRevenue != null && extractedRevenue > lastOCRRevenue) {
+                                    val revenueDelta = extractedRevenue - lastOCRRevenue
+                                    lastOCRRevenue = extractedRevenue
+                                    RevenueTracker.addRevenue(this@ScreenCaptureService, revenueDelta)
+                                    Log.d("ScreenCaptureService", "New revenue detected: $$extractedRevenue (delta: $$revenueDelta)")
+                                }
+                            }
+                        }
+                    }
+
+                    // --- End Revenue Extraction Logic ---
+
                     if (pendingScreenshot) {
                         // Save the current frame with overlay
                         saveBitmapToFile(rawBitmap, pendingRideType)
                         pendingScreenshot = false  // Clear the flag so we don't save repeatedly
                         // (Optionally, you could continue here if you do not want further processing on this frame)
                     }
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastAIUpdateTime > 1_000) {
+                    val currentTimeForAI = System.currentTimeMillis()
+                    if (currentTimeForAI - lastAIUpdateTime > 1_000) {
                         // If a frame is already processing, skip processing this one.
                         if (!isProcessingFrame) {
-                            lastAIUpdateTime = currentTime
+                            lastAIUpdateTime = currentTimeForAI
                             isProcessingFrame = true
                             serviceScope.launch {
                                 try {
@@ -232,7 +263,7 @@ class ScreenCaptureService : Service() {
                                     }
                                     val rideTypeBlocks = visionText.textBlocks.filter { block ->
                                         block.text.contains("Uber", ignoreCase = true) ||
-                                                block.text.contains("Delivery", ignoreCase = true)
+                                        block.text.contains("Delivery", ignoreCase = true)
                                     }
                                     val minTop = if (rideTypeBlocks.isNotEmpty()) {
                                         rideTypeBlocks.minOf { it.boundingBox?.top ?: Int.MAX_VALUE }
@@ -393,7 +424,6 @@ class ScreenCaptureService : Service() {
             }
         }, imageProcessingHandler)
 
-
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "ScreenCapture",
             width,
@@ -422,6 +452,35 @@ class ScreenCaptureService : Service() {
     }
 
     // --- End ride details parsing ---
+
+    // Helper function: returns true if the target package is in the foreground.
+    @SuppressLint("NewApi")
+    private fun isAppForeground(targetPackage: String): Boolean {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val time = System.currentTimeMillis()
+            // Query usage stats for the last 10 seconds.
+            val appList = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 10_000, time)
+            if (appList != null && appList.isNotEmpty()) {
+                val sortedMap = TreeMap<Long, UsageStats>()
+                for (usageStats in appList) {
+                    sortedMap[usageStats.lastTimeUsed] = usageStats
+                }
+                if (sortedMap.isNotEmpty()) {
+                    val topUsageStats = sortedMap[sortedMap.lastKey()]
+                    topUsageStats?.packageName == targetPackage
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            val tasks = activityManager.getRunningTasks(1)
+            tasks.isNotEmpty() && tasks[0].topActivity?.packageName == targetPackage
+        }
+    }
 
     override fun onDestroy() {
         super.onDestroy()
