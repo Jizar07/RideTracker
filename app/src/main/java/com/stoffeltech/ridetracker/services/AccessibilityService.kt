@@ -26,20 +26,47 @@ class AccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event?.let {
             val packageName = event.packageName?.toString() ?: ""
-            // Extract the text from the node tree
+
+            // ✅ Extract visible text
             val detectedText = extractTextFromNode(event.source).ifBlank { event.text.joinToString(" ") }
 
-            // Log the detected text for debugging
-            Log.d("AccessibilityService", "Detected text: $detectedText")
-
-            // If the event is from the Uber app, send the detected text to UberParser for processing.
             if (packageName.contains("com.ubercab.driver", ignoreCase = true)) {
                 serviceScope.launch {
-                    UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
+                    if (detectedText.isNotBlank()) {
+                        Log.d("AccessibilityService", "✔ Uber Ride Request: $detectedText")
+                        UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
+                    } else if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                        event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+                        Log.d("AccessibilityService", "🚨 Uber Overlay Detected! Extracting text...")
+
+                        // ✅ Extract All UI Elements from Uber Overlay
+                        val extractedText = extractAllTextFromOverlay(event.source)
+                        if (extractedText.isNotBlank()) {
+                            Log.d("AccessibilityService", "✔ Extracted Text from Overlay: $extractedText")
+                            UberParser.processUberRideRequest(extractedText, this@AccessibilityService)
+                        } else {
+                            Log.e("AccessibilityService", "❌ Could not extract text from Uber overlay.")
+                        }
+                    }
                 }
             }
         }
     }
+    private fun extractAllTextFromOverlay(node: AccessibilityNodeInfo?): String {
+        if (node == null) return ""
+
+        val stringBuilder = StringBuilder()
+        if (node.text != null) {
+            stringBuilder.append(node.text.toString()).append(" ")
+        }
+
+        for (i in 0 until node.childCount) {
+            stringBuilder.append(extractAllTextFromOverlay(node.getChild(i)))
+        }
+
+        return stringBuilder.toString().trim()
+    }
+
 
     /**
      * Recursively extracts text from an AccessibilityNodeInfo tree.
@@ -67,6 +94,9 @@ class AccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
         info.notificationTimeout = 100
+        // ✅ Force detect ALL UI elements, including pop-ups & system dialogs
+        info.flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         serviceInfo = info
 
 //        // TEMPORARY DEBUG: Simulate a ride request after 3 seconds.
@@ -80,6 +110,6 @@ class AccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         // Handle service interruption if necessary.
-        Log.w("AccessibilityService", "Accessibility Service Interrupted")
+//        Log.w("AccessibilityService", "Accessibility Service Interrupted")
     }
 }

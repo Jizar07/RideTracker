@@ -132,7 +132,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         override fun onLocationResult(locationResult: LocationResult) {
             super.onLocationResult(locationResult)
             locationResult.lastLocation?.let { location ->
-                LogHelper.logDebug("MainActivity", "Location received: ${location.latitude}, ${location.longitude}")
+//                LogHelper.logDebug("MainActivity", "Location received: ${location.latitude}, ${location.longitude}")
                 val currentLatLng = LatLng(location.latitude, location.longitude)
                 DistanceTracker.updateLocation(location)
 

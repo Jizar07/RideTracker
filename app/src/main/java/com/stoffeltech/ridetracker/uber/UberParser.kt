@@ -217,7 +217,7 @@ object UberParser {
         // -------------------- Block 1: Validate Input Text --------------------
         val trimmedText = rawText.trim()
         if (!trimmedText.endsWith("Accept", ignoreCase = true) && !trimmedText.endsWith("Match", ignoreCase = true)) {
-            Log.d("UberParser", "Incomplete ride request text received; skipping processing: $rawText")
+//            Log.d("UberParser", "Incomplete ride request text received; skipping processing: $rawText")
             return
         }
 
@@ -258,7 +258,7 @@ object UberParser {
         val adjustedFare = fareVal + bonus
         val fingerprint = "$adjustedFare-$totalMiles-$totalMinutes"
         if (fingerprint == lastUberRequestFingerprint) {
-            Log.d("UberParser", "Duplicate ride request detected; skipping processing.")
+//            Log.d("UberParser", "Duplicate ride request detected; skipping processing.")
             return
         }
         lastUberRequestFingerprint = fingerprint
@@ -314,7 +314,7 @@ object UberParser {
         // Schedule the overlay to hide after 6 seconds.
         Handler(Looper.getMainLooper()).postDelayed({
             FloatingOverlayService.hideOverlay()
-        }, 6000)
+        }, 15000)
     }
 
     /**
@@ -379,6 +379,6 @@ object UberParser {
         // Schedule the overlay to hide after 6 seconds.
         Handler(Looper.getMainLooper()).postDelayed({
             FloatingOverlayService.hideOverlay()
-        }, 6000)
+        }, 15000)
     }
 }
