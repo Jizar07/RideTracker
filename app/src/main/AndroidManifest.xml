@@ -72,13 +72,10 @@
         <service
             android:name=".services.FloatingOverlayService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <service
-            android:name=".services.ScreenCaptureService"
-            android:exported="false"
             android:foregroundServiceType="mediaProjection"
             tools:ignore="ForegroundServicePermission" />
+
+
         <service
             android:name=".services.RideRequestMessagingService"
             android:exported="false">

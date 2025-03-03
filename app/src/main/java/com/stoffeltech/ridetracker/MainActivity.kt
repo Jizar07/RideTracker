@@ -49,6 +49,7 @@ import com.google.android.libraries.places.api.net.PlacesClient
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.stoffeltech.ridetracker.services.FloatingOverlayService
+import com.stoffeltech.ridetracker.services.FloatingOverlayService.Companion.hideOverlay
 import com.stoffeltech.ridetracker.services.ScreenshotService
 //import com.stoffeltech.ridetracker.services.ScreenCaptureService
 import com.stoffeltech.ridetracker.services.clusterPlaces
@@ -266,20 +267,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
 
-//        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-//        val isScreenRecordingGranted = prefs.getBoolean("screen_recording_granted", false)
-//        LogHelper.logDebug("MainActivity", "isScreenRecordingGranted: $isScreenRecordingGranted")
-//        if (!isScreenRecordingGranted) {
-//            requestScreenCapturePermission()
-//        } else {
-//            startScreenCaptureService()
-//        }
-//        if (ScreenCaptureService.isRunning) {
-//            startScreenCaptureService()
-//        } else {
-//            requestScreenCapturePermission()
-//        }
-
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -309,6 +296,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         DistanceTracker.startTracking()
 
         updateTimeUI()
+        requestScreenCapturePermission()
     }
 
     private fun launchApp(packageName: String, activityClassName: String? = null) {
@@ -331,21 +319,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun requestScreenCapturePermission() {
         val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
         val screenCaptureIntent = mediaProjectionManager.createScreenCaptureIntent()
+        // Uncomment the following line to request permission:
         screenCaptureLauncher.launch(screenCaptureIntent)
     }
 
-//    private fun startScreenCaptureService() {
-//        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-//        val isScreenRecordingGranted = prefs.getBoolean("screen_recording_granted", false)
-//        if (isScreenRecordingGranted) {
-//            val serviceIntent = Intent(this, com.stoffeltech.ridetracker.services.ScreenCaptureService::class.java)
-//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-//                startForegroundService(serviceIntent)
-//            } else {
-//                startService(serviceIntent)
-//            }
-//        }
-//    }
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -391,8 +368,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         if (result.resultCode == Activity.RESULT_OK) {
             val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
             val mediaProjection = mediaProjectionManager.getMediaProjection(result.resultCode, result.data!!)
-            // Set the MediaProjection instance in ScreenshotService
-            ScreenshotService.updateMediaProjection(mediaProjection)
+            ScreenshotService.mediaProjection = mediaProjection
+            Log.d("MainActivity", "MediaProjection set successfully")
+            // Now start the overlay service if it isn’t already running:
+            startOverlayService()
         } else {
             Log.e("MainActivity", "Screen capture permission denied")
         }
@@ -628,31 +607,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-//        if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
-//            if (resultCode == Activity.RESULT_OK && data != null) {
-//                val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-//                prefs.edit().putBoolean("screen_recording_granted", true).apply()
-//                val serviceIntent = Intent(this, com.stoffeltech.ridetracker.services.ScreenCaptureService::class.java)
-//                serviceIntent.putExtra("resultCode", resultCode)
-//                serviceIntent.putExtra("data", data)
-//                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-//                    startForegroundService(serviceIntent)
-//                } else {
-//                    startService(serviceIntent)
-//                }
-//            } else {
-//                LogHelper.logError("MainActivity", "Screen capture permission denied or no data", null)
-//            }
-//        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) {
-//            stopService(Intent(this, com.stoffeltech.ridetracker.services.ScreenCaptureService::class.java))
+
             TimeTracker.stopTracking(this)
             DistanceTracker.stopTracking(this)
             updateEarningsUI()
+            hideOverlay()
             LogHelper.logDebug("MainActivity", "ScreenCaptureService stopped because app is closing.")
         }
     }

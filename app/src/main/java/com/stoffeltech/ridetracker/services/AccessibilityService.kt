@@ -69,13 +69,13 @@ class AccessibilityService : AccessibilityService() {
         info.notificationTimeout = 100
         serviceInfo = info
 
-        // TEMPORARY DEBUG: Simulate a ride request after 3 seconds.
-        serviceScope.launch {
-            delay(3000)
-            val testRideText = "Delivery (2)Exclusive\$5.07Includes expected tip39 min (12.1 mi) totalDairon's Cuban Pizzeria FoodtruckCalumet St & Lancelot Ave, Lehigh AcresAccept"
-            Log.d("AccessibilityServiceDebug", "Simulating ride request: $testRideText")
-            UberParser.processUberRideRequest(testRideText, this@AccessibilityService)
-        }
+//        // TEMPORARY DEBUG: Simulate a ride request after 3 seconds.
+//        serviceScope.launch {
+//            delay(3000)
+//            val testRideText = "Delivery (2)Exclusive\$5.07Includes expected tip39 min (12.1 mi) totalDairon's Cuban Pizzeria FoodtruckCalumet St & Lancelot Ave, Lehigh AcresAccept"
+//            Log.d("AccessibilityServiceDebug", "Simulating ride request: $testRideText")
+//            UberParser.processUberRideRequest(testRideText, this@AccessibilityService)
+//        }
     }
 
     override fun onInterrupt() {

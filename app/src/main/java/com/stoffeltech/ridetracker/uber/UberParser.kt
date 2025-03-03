@@ -3,6 +3,8 @@ package com.stoffeltech.ridetracker.uber
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.preference.PreferenceManager
 import com.stoffeltech.ridetracker.SettingsActivity
@@ -309,6 +311,10 @@ object UberParser {
             rating = rideInfo.rating?.toString() ?: "N/A",
             stops = rideInfo.stops ?: ""
         )
+        // Schedule the overlay to hide after 6 seconds.
+        Handler(Looper.getMainLooper()).postDelayed({
+            FloatingOverlayService.hideOverlay()
+        }, 6000)
     }
 
     /**
@@ -370,5 +376,9 @@ object UberParser {
             rating = "N/A", // Delivery requests do not include a rating.
             stops = rideInfo.stops ?: ""
         )
+        // Schedule the overlay to hide after 6 seconds.
+        Handler(Looper.getMainLooper()).postDelayed({
+            FloatingOverlayService.hideOverlay()
+        }, 6000)
     }
 }
