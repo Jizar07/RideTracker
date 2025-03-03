@@ -2,6 +2,7 @@ package com.stoffeltech.ridetracker.services
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -25,6 +26,28 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+// ------------------ New Data Class Definition ------------------
+
+/**
+ * Data class to hold detailed information extracted from a ride request.
+ * Used for both Uber and Delivery requests.
+ */
+data class UberRideDetails(
+    val rideType: String?,         // e.g., "UberX" or "Delivery (2)"
+    val isExclusive: Boolean,      // true if "Exclusive" is present
+    val fare: Double?,             // ride price, e.g., 12.63 or 5.07
+    val rating: Double?,           // rider rating, e.g., 5.00 (might be null for Delivery)
+    val isVerified: Boolean,       // true if "Verified" is present (for Uber)
+    val pickupTime: String?,       // e.g., "9 mins" or total time for Delivery
+    val pickupDistance: String?,   // e.g., "3.3 mi" or total distance for Delivery
+    val pickupAddress: String?,    // e.g., "Leeland Heights Blvd & Robert Ave, Lehigh Acres" (or delivery address)
+    val dropoffTime: String?,      // e.g., "22 mins" (for Uber)
+    val dropoffDistance: String?,  // e.g., "12.6 mi" (for Uber)
+    val dropoffAddress: String?,   // e.g., "25th St SW & Gretchen Ave S, Lehigh Acres" (for Uber)
+    val actionButton: String?      // e.g., "Accept" or "Match"
+)
+
+// ------------------ End New Data Class Definition ------------------
 
 class AccessibilityService : AccessibilityService() {
 
@@ -35,6 +58,7 @@ class AccessibilityService : AccessibilityService() {
         event?.let {
             val packageName = event.packageName?.toString() ?: ""
             val eventType = event.eventType
+            val fullText = extractTextFromNode(event.source)
 
             // Dump the entire node tree for debugging
             dumpNodeTree(event.source)
@@ -44,15 +68,53 @@ class AccessibilityService : AccessibilityService() {
 
             // Extract text from the accessibility node
             val sourceText = extractTextFromNode(event.source)
-            val detectedText = if (sourceText.isNotBlank()) sourceText else eventText
+            val detectedText = sourceText.ifBlank { eventText }
 
-//            Log.d("RideTracker", "Event source text: $sourceText")
-//            Log.d("RideTracker", "Event.getText(): $eventText")
-//            Log.d("RideTracker", "🔍 Detected App: $packageName | Event Type: $eventType | Text: $detectedText")
+            // Log the entire detected text for debugging
+            Log.d("AccessibilityService", "Detected text: $detectedText")
 
+//            if (packageName.equals("com.ubercab.driver", ignoreCase = true)) {
+//                UberParser.debugTest()
+//            }
 
-            // 🚖 Detect Uber/Lyft ride requests
-            if (packageName.contains("uber") || packageName.contains("lyft")) {
+            // Earnings extraction:
+            // If the screen shows "last trip", skip daily earnings extraction.
+//            if (packageName.contains("uber", ignoreCase = true)) {
+//                processRideRequest(detectedText)
+//                return
+//            } else
+            if (fullText.toLowerCase(Locale.getDefault()).contains("last trip")) {
+                Log.d("AccessibilityService", "Detected 'last trip' in text; ignoring earnings extraction.")
+            }
+            // Also ignore if the text contains ride request keywords (such as away, total, trip, verified, accept, match)
+            else if (listOf("away", "total", "verified", "accept", "match")
+                        .any { fullText.lowercase(Locale.getDefault()).contains(it) }) {
+                Log.d("AccessibilityService", "Detected ride request keywords in text; ignoring earnings extraction.")
+            }
+            else if (isSummaryScreenText(fullText)) {
+                Log.d("AccessibilityService", "Summary screen detected; ignoring earnings node extraction.")
+            } else {
+                val earningsNode = findDailyEarningsNode(event.source)
+                if (earningsNode != null) {
+                    Log.d("AccessibilityService", "Found daily earnings node with text: ${earningsNode.text}")
+                    val regex = "\\$(\\d+(?:\\.\\d{2})?)".toRegex()
+                    val match = regex.find(earningsNode.text.toString())
+                    val dailyEarnings = match?.groupValues?.get(1)?.toDoubleOrNull()
+                    Log.d("AccessibilityService", "Extracted daily earnings: $dailyEarnings")
+                    // Update RevenueTracker or perform further processing...
+                } else {
+                    Log.d("AccessibilityService", "No daily earnings node found with proper context.")
+                }
+            }
+
+            // ------------------ Ride Request Detection ------------------
+
+            // For Delivery requests: if detected text starts with "Delivery"
+            if (detectedText.trim().startsWith("Delivery", ignoreCase = true)) {
+                processDeliveryRideRequestWithDetails(detectedText)
+            } else if (packageName.contains("uber", ignoreCase = true)) {
+                processRideRequest(detectedText)
+            } else if (packageName.contains("lyft", ignoreCase = true)) {
                 analyzeRideRequest(detectedText)
             }
 
@@ -65,8 +127,70 @@ class AccessibilityService : AccessibilityService() {
 //                Log.d("RideTracker", "📂 Google Photos is open. Checking if ride request is displayed.")
                 analyzeRideRequest(detectedText)
             }
-
+            // ------------------ End Ride Request Detection ------------------
         }
+    }
+
+    private fun isSummaryScreenText(fullText: String): Boolean {
+        val lower = fullText.toLowerCase(Locale.getDefault())
+        // List of summary keywords to ignore
+        val summaryKeywords = listOf("stats", "breakdown", "earnings activity", "date picker", "filtertype", "back")
+        if (summaryKeywords.any { lower.contains(it) }) {
+            return true
+        }
+        // Check for multiple date ranges (e.g., "Feb 24 - Mar 3")
+        val dateRangeRegex = Regex("[A-Za-z]{3}\\s*\\d{1,2}\\s*-\\s*[A-Za-z]{3}\\s*\\d{1,2}")
+        val dateMatches = dateRangeRegex.findAll(fullText).toList()
+
+        // Check for multiple day-of-week abbreviations.
+        val dayRegex = Regex("\\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,]?\\b", RegexOption.IGNORE_CASE)
+        val dayMatches = dayRegex.findAll(fullText).toList()
+
+        return (dateMatches.size > 1) || (dayMatches.isNotEmpty())
+    }
+
+    // This function traverses upward from the candidate node to check context.
+    private fun isDailyEarningsNode(node: AccessibilityNodeInfo?): Boolean {
+        if (node == null) return false
+        val text = node.text?.toString() ?: ""
+        if (!text.matches(Regex("^\\$\\d+(\\.\\d{2})?\$"))) {
+            return false
+        }
+        var current = node.parent
+        val combinedParentText = StringBuilder()
+        var levels = 0
+        while (current != null && levels < 5) {
+            current.text?.let { combinedParentText.append(it).append(" ") }
+            current = current.parent
+            levels++
+        }
+        val parentTextStr = combinedParentText.toString().trim()
+        // Log the combined parent text for debugging
+//        Log.d("AccessibilityService", "Combined parent text: '$parentTextStr'")
+        val summaryPattern = Regex("(?i)\\b(stats|breakdown)\\b")
+        if (summaryPattern.containsMatchIn(parentTextStr)) {
+            Log.d("AccessibilityService", "Parent text contains summary keywords; rejecting node.")
+            return false
+        }
+        Log.d("AccessibilityService", "Node accepted as daily earnings candidate.")
+        return true
+    }
+
+    private fun findDailyEarningsNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (node.className == "android.widget.TextView") {
+            val text = node.text?.toString() ?: ""
+            if (text.matches(Regex("^\\$\\d+(\\.\\d{2})?\$"))) {
+                if (isDailyEarningsNode(node)) {
+                    return node
+                }
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val result = findDailyEarningsNode(node.getChild(i))
+            if (result != null) return result
+        }
+        return null
     }
 
     private fun analyzeRideRequest(text: String) {
@@ -80,43 +204,41 @@ class AccessibilityService : AccessibilityService() {
         }
     }
 
-
     private fun extractTextFromNode(node: AccessibilityNodeInfo?): String {
         if (node == null) return ""
         val builder = StringBuilder()
-
-        // Prefer node.text, but fallback to contentDescription if text is null.
         when {
             node.text != null -> builder.append(node.text.toString()).append(" ")
             node.contentDescription != null -> builder.append(node.contentDescription.toString()).append(" ")
         }
-
         for (i in 0 until node.childCount) {
             builder.append(extractTextFromNode(node.getChild(i)))
         }
         return builder.toString().trim()
     }
 
-
+    @SuppressLint("DefaultLocale")
     private fun processRideRequest(text: String) {
         serviceScope.launch {
             val prefs = PreferenceManager.getDefaultSharedPreferences(this@AccessibilityService)
-            val cleanedText = text.replace("l", "1").replace("L", "1")
+            val trimmedText = text.trim()
+            if (!trimmedText.endsWith("Accept", ignoreCase = true) && !trimmedText.endsWith("Match", ignoreCase = true)) {
+                Log.d("AccessibilityService", "Incomplete ride request text received; skipping processing: $text")
+                return@launch
+            }
+
+//            val cleanedText = text.replace("l", "1").replace("L", "1")
             val requiredKeywords = listOf("\\$", "mi", "mins", "trip", "away", "Verified", "Accept", "Match")
-            val candidateBlocks = cleanedText.split("\n").map { it.trim() }
+            val candidateBlocks = text.split("\n").map { it.trim() }
                 .filter { block -> requiredKeywords.all { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(block) } }
             val tripRequestText = if (candidateBlocks.isNotEmpty()) {
                 candidateBlocks.maxByOrNull { block ->
                     requiredKeywords.sumOf { Regex(it, RegexOption.IGNORE_CASE).findAll(block).count() }
-                } ?: cleanedText
+                } ?: text
             } else {
-                cleanedText
+                text
             }
-
-//            Log.d("RideTracker", "Full OCR Text: $text")
-
-            val rideInfo = parseRideInfo(tripRequestText)
-//            Log.d("RideTracker", "Parsed ride info: $rideInfo")
+            val rideInfo = parseRideInfo(text)
             if (rideInfo == null) {
                 FloatingOverlayService.hideOverlay()
                 return@launch
@@ -130,9 +252,13 @@ class AccessibilityService : AccessibilityService() {
             val pickupTimeVal = rideInfo.pickupTime ?: 0.0
             val tripTimeVal = rideInfo.tripTime ?: 0.0
             val totalMinutes = pickupTimeVal + tripTimeVal
+            Log.d("AccessibilityService", "Validation Check: fare=$fareVal, totalMiles=$totalMiles, totalMinutes=$totalMinutes")
+
 
             val validAction = tripRequestText.contains("Accept", ignoreCase = true) ||
                     tripRequestText.contains("Match", ignoreCase = true)
+            Log.d("AccessibilityService", "Valid Action Check: validAction=$validAction, tripRequestText='$tripRequestText'")
+
 
             if (rideInfo.rideType?.equals("Delivery", ignoreCase = true) == true) {
                 if (totalMiles <= 0.0 || totalMinutes <= 0.0 || !validAction) {
@@ -146,9 +272,11 @@ class AccessibilityService : AccessibilityService() {
                 }
             }
 
-            // ✅ **Fingerprint Logic: Prevent duplicate requests**
-            val adjustedFare = (rideInfo.fare ?: 0.0) + prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
+            val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
+            val adjustedFare = (rideInfo.fare ?: 0.0) + bonus
             val fingerprint = "$adjustedFare-$totalMiles-$totalMinutes"
+            Log.d("AccessibilityService", "Valid ride request accepted, updating overlay with rideInfo: $rideInfo")
+
 
             if (fingerprint == lastRequestFingerprint) {
 //                Log.d("RideTracker", "⚠️ Duplicate ride request detected. Skipping processing.")
@@ -157,15 +285,13 @@ class AccessibilityService : AccessibilityService() {
             lastRequestFingerprint = fingerprint // ✅ **Update fingerprint to prevent reprocessing**
 
             if (rideInfo != null) {
-                // ✅ **Log Ride Request**
-                UberParser.logUberRideRequest(rideInfo, "", "", "Accept", false)
+                UberParser.logUberRideRequest(rideInfo, "", "", rideInfo.actionButton ?: "N/A", false)
 
                 val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
                 val adjustedFare = (rideInfo.fare ?: 0.0) + bonus
                 val totalMiles = (rideInfo.pickupDistance ?: 0.0) + (rideInfo.tripDistance ?: 0.0)
                 val totalMinutes = (rideInfo.pickupTime ?: 0.0) + (rideInfo.tripTime ?: 0.0)
 
-                // ✅ **Critical Coloring Logic**
                 val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
                 val pricePerHour = if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0
 
@@ -185,14 +311,6 @@ class AccessibilityService : AccessibilityService() {
                     else -> Color.GREEN
                 }
 
-                // ✅ **Final Validation: Prevent invalid rides from being processed**
-                if (totalMiles <= 0.0 && totalMinutes <= 0.0 && adjustedFare <= 0.0) {
-//                    Log.d("RideTracker", "❌ Invalid ride request detected (zero values). Hiding overlay.")
-                    FloatingOverlayService.hideOverlay()
-                    return@launch
-                }
-
-                // ✅ **Update Overlay When Ride is Detected**
                 FloatingOverlayService.updateOverlay(
                     rideType = rideInfo.rideType ?: "Unknown",
                     fare = "$${String.format("%.2f", adjustedFare)}",
@@ -213,52 +331,19 @@ class AccessibilityService : AccessibilityService() {
             }
         }
     }
+
     private fun parseRideInfo(text: String): com.stoffeltech.ridetracker.services.RideInfo? {
-        // Remove header labels.
         val headerKeywords = listOf("p/Mi1e", "Minutes", "Per Mi1e", "Per Minute")
         val cleanedText = text.lines()
             .filter { line -> headerKeywords.none { header -> line.trim().equals(header, ignoreCase = true) } }
             .joinToString("\n")
         // Determine if this is a Lyft request by checking for "yft" (ignoring case).
-        return if (cleanedText.contains("yft", ignoreCase = true)) {
+        return if (cleanedText.contains("Lyft", ignoreCase = true)) {
             LyftParser.parse(cleanedText)
         } else {
             UberParser.parse(cleanedText)
         }
     }
-
-    private fun saveBitmapToFile(bitmap: Bitmap, rideType: String) {
-        // Get the public Pictures directory.
-        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-
-        // Create (or reuse) the main folder "Ride Tracker".
-        val appFolder = File(picturesDir, "Ride Tracker")
-        if (!appFolder.exists()) {
-            appFolder.mkdirs()
-        }
-
-        // Create (or reuse) the subfolder for the ride type.
-        val rideFolder = File(appFolder, rideType)
-        if (!rideFolder.exists()) {
-            rideFolder.mkdirs()
-        }
-
-        // Generate a unique file name with a timestamp.
-        val dateFormat = SimpleDateFormat("MM-dd-yy_hhmmssa", Locale.getDefault())
-        val timestamp = dateFormat.format(Date())
-        val filename = "${rideType}_${timestamp}.png"
-        val file = File(rideFolder, filename)
-
-        try {
-            FileOutputStream(file).use { fos ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-            }
-            Log.d("AccessibilityService", "✅ Screenshot saved to ${file.absolutePath}")
-        } catch (e: Exception) {
-            Log.e("AccessibilityService", "❌ Error saving screenshot: ${e.message}")
-        }
-    }
-
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -270,21 +355,13 @@ class AccessibilityService : AccessibilityService() {
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
         info.notificationTimeout = 100
         serviceInfo = info
-//        Log.d("RideTracker", "Accessibility Service Connected with updated config")
 
-        // (Optional) Debug: simulate a request in debug mode.
-//        if (BuildConfig.DEBUG) {
-//            val testRideText = """
-//            UberX
-//            $23.45
-//            3 mins (1.2 mi) away
-//            5 mins (2.3 mi) trip
-//            Pickup Location: 123 Main St
-//            Dropoff Location: 456 Elm St
-//        """.trimIndent()
-//            analyzeRideRequest(testRideText)
-//        }
+//        // TEMPORARY: Simulate a ride request for debugging
+//        val testText = "UberX PriorityExclusive$7.555.005% Advantage included5 mins (1.3 mi) awayLakeside Dr & Zimmerman Ave, Lehigh Acres13 mins (7.8 mi) tripPennfield Ave & Theodore Vail St E, Lehigh AcresAccept"
+//        Log.d("AccessibilityService", "Simulating ride request with testText: $testText")
+//        processRideRequest(testText)
     }
+
     private fun dumpNodeTree(node: AccessibilityNodeInfo?, indent: String = "") {
         if (node == null) return
         val nodeInfo = "Class: ${node.className} | Text: ${node.text} | ContentDesc: ${node.contentDescription}"
@@ -294,9 +371,89 @@ class AccessibilityService : AccessibilityService() {
         }
     }
 
-
-
     override fun onInterrupt() {
 //        Log.w("RideTracker", "Accessibility Service Interrupted")
+    }
+
+    // -------------------------- New Functions for Delivery Detailed Extraction --------------------------
+
+    /**
+     * Extracts detailed Delivery ride request information from the provided text.
+     * This function adapts the block extraction logic from ScreenCaptureService for Delivery format.
+     */
+    private fun extractDeliveryRideDetails(text: String): UberRideDetails {
+        val rideTypePattern = Regex("^(Delivery(?:\\s*\\((\\d+)\\))?)(Exclusive)?", RegexOption.IGNORE_CASE)
+        val rideTypeMatch = rideTypePattern.find(text)
+        val rideType = rideTypeMatch?.groups?.get(1)?.value
+        val isExclusive = rideTypeMatch?.groups?.get(3) != null
+
+        // 2. Extract fare using the $ sign.
+        val farePattern = Regex("\\$([0-9]+\\.[0-9]{2})")
+        val fareMatch = farePattern.find(text)
+        val fare = fareMatch?.groups?.get(1)?.value?.toDoubleOrNull()
+
+        val includesTip = text.contains("Includes expected tip", ignoreCase = true)
+
+        val totalPattern = Regex("([0-9]+\\s*min)\\s*\\(\\s*([0-9]+\\.?[0-9]*)\\s*mi\\)", RegexOption.IGNORE_CASE)
+        val totalMatch = totalPattern.find(text)
+        val totalTime = totalMatch?.groups?.get(1)?.value
+        val totalDistance = totalMatch?.groups?.get(2)?.value
+
+        val addressPattern = Regex("total\\s*(.*?)\\s*(Accept|Match)", RegexOption.IGNORE_CASE)
+        val addressMatch = addressPattern.find(text)
+        val address = addressMatch?.groups?.get(1)?.value?.trim()
+
+        val actionButtonPattern = Regex("(Accept|Match)\\b", RegexOption.IGNORE_CASE)
+        val actionButtonMatch = actionButtonPattern.find(text)
+        val actionButton = actionButtonMatch?.groups?.get(1)?.value
+
+        return UberRideDetails(
+            rideType = rideType,
+            isExclusive = isExclusive,
+            fare = fare,
+            rating = null,
+            isVerified = false,
+            pickupTime = totalTime,
+            pickupDistance = totalDistance,
+            pickupAddress = address,
+            dropoffTime = null,
+            dropoffDistance = null,
+            dropoffAddress = null,
+            actionButton = actionButton
+        )
+    }
+
+    /**
+     * Processes a Delivery ride request using detailed extraction logic.
+     * This method extracts the Delivery details from the accessibility event text,
+     * logs the extracted details, and updates the floating overlay.
+     */
+    @SuppressLint("DefaultLocale")
+    private fun processDeliveryRideRequestWithDetails(text: String) {
+        serviceScope.launch {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this@AccessibilityService)
+            val details = extractDeliveryRideDetails(text)
+            Log.d("AccessibilityService", "Extracted Delivery Ride Details: $details")
+            if (details.actionButton.isNullOrEmpty()) {
+                FloatingOverlayService.hideOverlay()
+                return@launch
+            }
+            val adjustedFare = details.fare ?: 0.0
+            FloatingOverlayService.updateOverlay(
+                rideType = "${details.rideType ?: "Unknown"}${if(details.isExclusive) " Exclusive" else ""}",
+                fare = "$${String.format("%.2f", adjustedFare)}",
+                fareColor = Color.GREEN,
+                pMile = "",
+                pMileColor = Color.GREEN,
+                pHour = "",
+                pHourColor = Color.GREEN,
+                miles = details.pickupDistance ?: "",
+                minutes = details.pickupTime ?: "",
+                profit = "",
+                profitColor = Color.GREEN,
+                rating = details.rating?.toString() ?: "N/A",
+                stops = details.pickupAddress ?: ""
+            )
+        }
     }
 }

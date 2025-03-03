@@ -11,6 +11,9 @@ import kotlin.math.abs
 private var lastDeliveryRawFare: Double? = null
 private var lastDeliveryAdjustedFare: Double? = null
 private var lastDeliveryRequestHash: Int? = null
+// Add a fingerprint for Uber ride requests to prevent duplicate processing.
+private var lastUberRequestFingerprint: String? = null
+
 
 object UberParser {
 
@@ -20,6 +23,56 @@ object UberParser {
         "(UberX Priority|UberX Reserve|Uber Black XL|Uber Connect XL|Uber Green|Green Comfort|Uber Black|UberX|UberXL|UberPool|Uber Connect|Uber Share|Comfort|Premier|Pet|Delivery)",
         RegexOption.IGNORE_CASE
     )
+
+    private fun preprocessAccessibilityText(text: String): String {
+        var result = text
+        // List of ride types we expect
+        val rideTypes = listOf(
+            "UberX Priority", "UberX Reserve", "Uber Black XL", "Uber Connect XL",
+            "Uber Green", "Green Comfort", "Uber Black", "UberX", "UberXL",
+            "UberPool", "Uber Connect", "Uber Share", "Comfort", "Premier", "Pet", "Delivery"
+        )
+        // Insert newline before each ride type occurrence if not already preceded by one
+        for (ride in rideTypes) {
+            result = result.replace(Regex("(?<!\\n)\\b($ride)"), "\n$1")
+        }
+        // Insert newline before fare values (e.g., "$7.55")
+        result = result.replace(Regex("(?<!\\n)(\\$\\d+(?:\\.\\d{2})?)(?!\\d)"), "\n$1")
+        // NEW: Insert newline before a "$" if immediately preceded by a letter.
+        result = result.replace(Regex("(?<=[A-Za-z])\\$(\\d)"), "\n\$$1")
+        // Insert newline before time info (e.g., "5 mins" or "39 min")
+        result = result.replace(Regex("(?<!\\n)(\\d+\\s*min)"), "\n$1")
+        // Insert newline before action buttons like "Accept" or "Match"
+        result = result.replace(Regex("(?<!\\n)\\b(Accept|Match)"), "\n$1")
+        // Insert newline AFTER "away" and "trip" to isolate addresses
+        result = result.replace(Regex("(?i)(away)(?!\\n)"), "$1\n")
+        result = result.replace(Regex("(?i)(trip)(?!\\n)"), "$1\n")
+        return result.trim()
+    }
+
+//    fun debugTest() {
+//        val testText = "UberX PriorityExclusive$7.555.005% Advantage included5 mins (1.3 mi) awayLakeside Dr & Zimmerman Ave, Lehigh Acres13 mins (7.8 mi) tripPennfield Ave & Theodore Vail St E, Lehigh AcresAccept"
+//        val rideInfo = parse(testText)
+//        if (rideInfo == null) {
+//            Log.d("UberParserDebug", "Debug RideInfo: null")
+//            return
+//        }
+//        Log.d("UberParserDebug", "----- Debug RideInfo -----")
+//        Log.d("UberParserDebug", "Ride Type: ${rideInfo.rideType}")
+//        Log.d("UberParserDebug", "Fare: ${rideInfo.fare}")
+//        Log.d("UberParserDebug", "Rating: ${rideInfo.rating}")
+//        Log.d("UberParserDebug", "Verified: ${testText.contains("Verified", ignoreCase = true)}")
+//        Log.d("UberParserDebug", "Exclusive: ${testText.contains("exclusive", ignoreCase = true)}")
+//        Log.d("UberParserDebug", "Action Button: ${rideInfo.actionButton ?: "N/A"}")
+//        Log.d("UberParserDebug", "Pickup Time (mins): ${rideInfo.pickupTime}")
+//        Log.d("UberParserDebug", "Pickup Distance (mi): ${rideInfo.pickupDistance}")
+//        Log.d("UberParserDebug", "Pickup Location: ${rideInfo.pickupLocation}")
+//        Log.d("UberParserDebug", "Trip Time (mins): ${rideInfo.tripTime}")
+//        Log.d("UberParserDebug", "Trip Distance (mi): ${rideInfo.tripDistance}")
+//        Log.d("UberParserDebug", "Dropoff Location: ${rideInfo.tripLocation}")
+//        Log.d("UberParserDebug", "Stops (Extra Info): ${rideInfo.stops}")
+//        Log.d("UberParserDebug", "--------------------------")
+//    }
 
     fun logUberRideRequest(
         rideInfo: RideInfo,
@@ -31,249 +84,108 @@ object UberParser {
         val sb = StringBuilder()
         // Line 1: Ride type and close button
         sb.appendLine("Ride Type: ${rideInfo.rideType ?: "Unknown"}    [Close: (x)]")
-
         // Line 2: Fare information (fare, surge/bonus info could be appended here if available)
         sb.appendLine("Fare: \$${rideInfo.fare ?: "N/A"}")
-
         // Line 3: Rating (append " (Verified)" if the flag is true)
         val ratingText = rideInfo.rating?.toString() ?: "N/A"
         val verifiedText = if (verified) " (Verified)" else ""
-
         sb.appendLine("Rating: $ratingText$verifiedText")
-
         // Line 4: Pickup info
         sb.appendLine("Pickup Info: ${rideInfo.pickupTime ?: "N/A"} mins (${rideInfo.pickupDistance ?: "N/A"} mi) away")
-
         // Line 5: Pickup location (could span more than one line if needed)
         sb.appendLine("Pickup Location: $pickupLocation")
-
         // Line 6: Dropoff info (always in the format: e.g. "13 mins (4.8 mi) trip")
         sb.appendLine("Dropoff Info: ${rideInfo.tripTime ?: "N/A"} mins (${rideInfo.tripDistance ?: "N/A"} mi) trip")
-
         // Line 7: Dropoff location (again, may be multi-line)
         sb.appendLine("Dropoff Location: $dropoffLocation")
-
         // Add stops info:
         val stopsText = if (rideInfo.stops?.isNotEmpty() == true) rideInfo.stops else "None"
         sb.appendLine("Stops: $stopsText")
-
         // Bottom line: Action button (Accept or Match)
         sb.appendLine("Action Button: $actionButton")
-
-//        Log.d("UberRideRequest", sb.toString())
-    }
-    fun parseRevenueFromImage(bitmap: Bitmap, onResult: (Double?) -> Unit) {
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val image = InputImage.fromBitmap(bitmap, 0)
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                val extractedText = visionText.text
-//                Log.d("UberParser", "OCR output for revenue region: $extractedText")
-                // Regex to capture "$" followed by one or more digits, a period, and exactly two digits.
-                val regex = "\\$(\\d+(?:\\.\\d{2})?)".toRegex()
-                val matchResult = regex.find(extractedText)
-                val revenue = matchResult?.groupValues?.get(1)?.toDoubleOrNull()
-                onResult(revenue)
-            }
-            .addOnFailureListener { e ->
-                Log.e("UberParser", "Failed to extract revenue: ${e.message}")
-                onResult(null)
-            }
+        //        Log.d("UberRideRequest", sb.toString())
     }
 
     fun parse(cleanedText: String): RideInfo? {
-        // Split the cleaned text into non-empty lines.
-        val lines = cleanedText.lines().map { it.trim() }.filter { it.isNotEmpty() }
-        var fare: Double? = null
-        var rideType: String? = null
+        // Preprocess the text (for accessibility we use the raw text trimmed)
+        val text = preprocessAccessibilityText(cleanedText)
 
-        // Correct common OCR mistakes.
-        val correctedText = cleanedText
-            .replace("De1ivery", "Delivery", ignoreCase = true)
-            .replace("delive1y", "Delivery", ignoreCase = true)
-            .replace("deliv ery", "Delivery", ignoreCase = true) // new correction
-            .replace("tota1", "total", ignoreCase = true)
-            .replace(Regex("(?<=\\s|^)[^A-Za-z]*(Delivery)", RegexOption.IGNORE_CASE), "$1")
+        // --- Extract Ride Type ---
+        val rideTypeMatch = rideTypeRegex.find(text)
+        var rideType = rideTypeMatch?.value ?: "Unknown"
 
-
-//        Log.d("UberParser", "Corrected Text: $correctedText")
-
-        // --- Attempt 1 (Modified) ---
-        // Define a strict pattern for a fare line (e.g. "$24.22")
-        val farePattern = Regex("^\\$\\d+(?:[.,]\\d{2})?\$")
-        for (i in lines.indices) {
-            val line = lines[i]
-            // Skip lines mentioning reservation fee.
-            if (line.contains("reservation fee included", ignoreCase = true)) continue
-
-            // Use the regex to search the whole line.
-            val match = rideTypeRegex.find(line)
-            if (match != null) {
-                rideType = match.value
-                // Only consider the very next line for the fare.
-                if (i + 1 < lines.size) {
-                    val nextLine = lines[i + 1].trim()
-                    if (farePattern.matches(nextLine)) {
-                        // Remove the "$" and convert to a Double (replacing commas with periods)
-                        fare = nextLine.replace("$", "").replace(",", ".").toDoubleOrNull()
-                        if (fare != null) break
-                    }
-                }
-            }
+        /* This code checks if the extracted ride type string contains the word "Exclusive" (ignoring letter case). If it does, it sets a flag (stored in the variable exclusive) to true, and then removes the word "Exclusive" from the ride type string and trims any extra whitespace. In effect, it separates the "exclusive" status from the base ride type so you can handle the exclusivity separately while keeping the ride type string clean */
+        val exclusive = rideType.contains("Exclusive", ignoreCase = true)
+        if (exclusive) {
+            rideType = rideType.replace("Exclusive", "", ignoreCase = true).trim()
         }
 
-        // This regex matches an optional leading number and whitespace,
-// then "Multiple stops" where each "l" can be either 'l' or '1'.
-        val multipleStopsRegex = Regex("^(?:\\d+\\s*)?[Mm]u(?:l|1)tip(?:l|1)e stops\$", RegexOption.IGNORE_CASE)
-        var stopsValue = ""
-        for (line in lines) {
-            val trimmedLine = line.trim()
-            if (trimmedLine.isEmpty()) continue
-            if (multipleStopsRegex.matches(trimmedLine)) {
-                stopsValue = "Multiple stops"
-                break
-            }
-        }
-//        Log.d("UberParser", "stops value calculated: '$stopsValue'")
-        if (correctedText.contains("Delivery", ignoreCase = true)) {
-            rideType = "Delivery"
-//            Log.d("UberParserDebug", "Forced override: rideType set to Delivery because correctedText contains 'Delivery'")
+        // --- Extract Fare ---
+        // Use a regex that captures a fare with exactly two decimals.
+        val fareRegex = Regex("\\$(\\d+)[.,](\\d{2})")
+        val fareMatch = fareRegex.find(text)
+        val fare = fareMatch?.let {
+            val wholePart = it.groupValues[1]
+            val decimalPart = it.groupValues[2]
+            "$wholePart.$decimalPart".toDoubleOrNull()
         }
 
+        // --- Extract Rating ---
+        // Look for a percentage number anywhere in the text.
+        val ratingRegex = Regex("(\\d+(?:\\.\\d{2,3}))%")
+        val rating = ratingRegex.find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.let { if (it <= 5.0) it else 5.0 }
 
-        // Fallback: If no ride type found above and corrected text contains "Delivery", set rideType.
-        if (rideType == null && !rideTypeRegex.containsMatchIn(correctedText) && correctedText.contains("Delivery", ignoreCase = true)) {
-            rideType = "Delivery"
-//            Log.d("UberParser", "Fallback: Setting rideType to Delivery based on corrected text")
-        }
+        // --- Extract Verified flag ---
+        val verified = text.contains("Verified", ignoreCase = true)
 
-        // --- Special handling for Delivery rides ---
-        if (rideType?.equals("Delivery", ignoreCase = true) == true) {
-            // Parse total time and distance.
-            val timeRegex = Regex("([0-9]+)\\s*min", RegexOption.IGNORE_CASE)
-            val totalTime = timeRegex.find(correctedText)?.groupValues?.get(1)?.toDoubleOrNull()
-            val distanceRegex = Regex("\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\)", RegexOption.IGNORE_CASE)
-            val totalDistance = distanceRegex.find(correctedText)?.groupValues?.get(1)?.toDoubleOrNull()
+        // --- Extract Pickup Info (Time and Distance) ---
+        // Expecting something like "5 mins (1.3 mi) away"
+        val pickupInfoRegex = Regex("(\\d+)\\s*mins?\\s*\\((\\d+(?:\\.\\d+)?)\\s*mi\\)\\s*away", RegexOption.IGNORE_CASE)
+        val pickupMatch = pickupInfoRegex.find(text)
+        val pickupTime = pickupMatch?.groupValues?.get(1)?.toDoubleOrNull()
+        val pickupDistance = pickupMatch?.groupValues?.get(2)?.toDoubleOrNull()
 
-            // Extract fare using all matches and take the last one.
-            val fareRegex = Regex("\\$([0-9]+(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
-            val fareMatches = fareRegex.findAll(correctedText).toList()
-            val rawFare = fareMatches.lastOrNull()?.groupValues?.get(1)?.toDoubleOrNull()
+        // --- Extract Pickup Location ---
+        // Look for text between "away" and the next occurrence of time info (for trip)
+        val pickupLocationRegex = Regex("away\\s*([^\\d]+?)\\s*\\d+\\s*mins", RegexOption.IGNORE_CASE)
+        val pickupLocation = pickupLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
 
-            var fareVal: Double? = null
-            if (rawFare != null) {
-                // If we have a previous raw fare and the new raw fare is essentially the same (difference < 0.01), reuse the adjusted fare.
-                if (lastDeliveryRawFare != null && abs(rawFare - lastDeliveryRawFare!!) < 0.01) {
-                    fareVal = lastDeliveryAdjustedFare
-                } else {
-                    fareVal = rawFare
-                    lastDeliveryRawFare = rawFare
-                    lastDeliveryAdjustedFare = fareVal
-                }
-            }
+        // --- Extract Trip Info (Time and Distance) ---
+        // Expecting something like "13 mins (7.8 mi) trip"
+        val tripInfoRegex = Regex("(\\d+)\\s*mins?\\s*\\((\\d+(?:\\.\\d+)?)\\s*mi\\)\\s*trip", RegexOption.IGNORE_CASE)
+        val tripMatch = tripInfoRegex.find(text)
+        val tripTime = tripMatch?.groupValues?.get(1)?.toDoubleOrNull()
+        val tripDistance = tripMatch?.groupValues?.get(2)?.toDoubleOrNull()
 
-            return RideInfo(
-                rideType = rideType,
-                fare = fareVal,
-                rating = null,
-                pickupTime = totalTime,
-                pickupDistance = totalDistance,
-                pickupLocation = null,
-                tripTime = null,
-                tripDistance = null,
-                tripLocation = null,
-                stops = stopsValue
-            )
-        }
+        // --- Extract Dropoff Location ---
+        // Look for text between "trip" and "Accept" or "Match"
+        val dropoffLocationRegex = Regex("trip\\s*(.*?)\\s*(Accept|Match)", RegexOption.IGNORE_CASE)
+        val dropoffLocation = dropoffLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
 
-        // --- Attempt 2: Look for a ride type line and then process the very next line for a fare ---
-        if (fare == null) {
-            for (i in lines.indices) {
-                // Skip lines with reservation fee text
-                if (lines[i].contains("reservation fee included", ignoreCase = true)) continue
-                val match = rideTypeRegex.find(lines[i])
-                if (match != null) {
-                    rideType = match.value
-                    if (i + 1 < lines.size) {
-                        val nextLine = lines[i + 1].trim()
-                        // Only accept the next line if it exactly matches the fare pattern.
-                        if (farePattern.matches(nextLine)) {
-                            fare = nextLine.replace("$", "").replace(",", ".").toDoubleOrNull()
-                            if (fare != null) break
-                        }
-                    }
-                }
-            }
-        }
+        // --- Extract Action Button ---
+        // Use a regex anchored to the end to capture "Accept" or "Match" at the end.
+        val actionButtonRegex = Regex("(?i)(Accept|Match)\\s*$")
+        val actionButton = actionButtonRegex.find(text)?.groupValues?.get(1) ?: "N/A"
 
-        // --- Attempt 3: Fallback – search backwards from a pickup info line ---
-        if (fare == null) {
-            val pickupRegex = Regex(".*\\d+\\s*mins.*?\\(.*?mi.*?away", RegexOption.IGNORE_CASE)
-            val pickupIndex = lines.indexOfFirst { pickupRegex.containsMatchIn(it) }
-            if (pickupIndex > 0) {
-                for (j in (pickupIndex - 1) downTo 0) {
-                    if (lines[j].contains("reservation fee included", ignoreCase = true)) continue
-                    val candidate = lines[j].trim()
-                    // Only consider the candidate if it exactly matches a fare pattern.
-                    if (farePattern.matches(candidate)) {
-                        fare = candidate.replace("$", "").replace(",", ".").toDoubleOrNull()
-                        if (fare != null) break
-                    }
-                }
-            }
-        }
+        // --- Combine extra fields into an extra info string (for stops) ---
+        val stops = if (text.contains("Multiple stops", ignoreCase = true)) "Multiple stops" else ""
+        val extraInfo = "Verified: $verified, Exclusive: $exclusive"
 
-        // --- Extract pickup and trip info ---
-        val pickupTimeRegex = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*mins.*?\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\).*?away", RegexOption.IGNORE_CASE)
-        val pickupMatch = pickupTimeRegex.find(cleanedText)
-        val pickupTimeVal = pickupMatch?.groupValues?.get(1)?.toDoubleOrNull()
-        val pickupDistanceVal = pickupMatch?.groupValues?.get(2)?.toDoubleOrNull()
-
-        val tripRegex = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*mins.*?\\(([0-9]+(?:\\.[0-9]+)?)\\s*mi\\).*?trip", RegexOption.IGNORE_CASE)
-        val tripMatch = tripRegex.find(cleanedText)
-        val tripTimeVal = tripMatch?.groupValues?.get(1)?.toDoubleOrNull()
-        val tripDistanceVal = tripMatch?.groupValues?.get(2)?.toDoubleOrNull()
-
-        // Determine pickup and dropoff addresses.
-        val pickupInfoIndex = lines.indexOfLast { it.contains("mins", ignoreCase = true) && it.contains("away", ignoreCase = true) }
-        val pickupAddress = if (pickupInfoIndex != -1 && pickupInfoIndex + 1 < lines.size)
-            lines[pickupInfoIndex + 1] else "N/A"
-        val tripInfoIndex = lines.indexOfLast { it.contains("mins", ignoreCase = true) && it.contains("trip", ignoreCase = true) }
-        val dropoffAddress = if (tripInfoIndex != -1 && tripInfoIndex + 1 < lines.size)
-            lines[tripInfoIndex + 1] else "N/A"
-
-        // --- Fare validation using extracted tripDistanceVal ---
-        if (fare != null && tripDistanceVal != null) {
-            val farePerMile = fare / tripDistanceVal
-            val lowerBound = 0.5
-            val upperBound = 10.0
-            if (farePerMile < lowerBound || farePerMile > upperBound) {
-                val adjustedFare = fare / 100.0
-                val adjustedFarePerMile = adjustedFare / tripDistanceVal
-                if (adjustedFarePerMile in lowerBound..upperBound) {
-                    fare = adjustedFare
-                }
-            }
-        }
-
-        // --- Rating extraction ---
-        val ratingRegex = Regex("[★*]\\s*([0-9]+\\.[0-9]{2})")
-        val ratingVal = ratingRegex.find(cleanedText)?.groupValues?.get(1)?.toDoubleOrNull()
-        val finalRating = ratingVal?.takeIf { it in 0.0..5.0 }
-
-        if (fare == null && pickupTimeVal == null && tripTimeVal == null) return null
+        // --- Validation: Ensure required fields are present ---
+        if (fare == null || pickupTime == null || tripTime == null) return null
 
         return RideInfo(
             rideType = rideType,
             fare = fare,
-            rating = finalRating,
-            pickupTime = pickupTimeVal,
-            pickupDistance = pickupDistanceVal,
-            pickupLocation = pickupAddress,
-            tripTime = tripTimeVal,
-            tripDistance = tripDistanceVal,
-            tripLocation = dropoffAddress,
-            stops = stopsValue
+            rating = rating,
+            pickupTime = pickupTime,
+            pickupDistance = pickupDistance,
+            pickupLocation = pickupLocation,
+            tripTime = tripTime,
+            tripDistance = tripDistance,
+            tripLocation = dropoffLocation,
+            stops = stops,
+            actionButton = actionButton
         )
     }
 }

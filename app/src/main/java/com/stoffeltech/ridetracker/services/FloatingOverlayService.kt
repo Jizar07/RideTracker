@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
@@ -28,6 +29,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import com.stoffeltech.ridetracker.services.ScreenshotService
+
 
 class FloatingOverlayService : Service() {
 
@@ -146,7 +149,12 @@ class FloatingOverlayService : Service() {
                 } else {
                     instance?.tvStopsValue?.text = ""
                 }
-
+                // Trigger a full-screen screenshot including the floating overlay
+                instance?.let { service ->
+                    ScreenshotService.mediaProjection?.let { mp ->
+                        ScreenshotService.captureFullScreen(service, mp, rideType)
+                    } ?: Log.e("FloatingOverlayService", "MediaProjection not set, cannot capture screenshot")
+                }
             }
         }
 
@@ -158,6 +166,19 @@ class FloatingOverlayService : Service() {
                 instance?.floatingView?.visibility = View.GONE
             }
         }
+        fun getOverlayBitmap(): Bitmap? {
+            instance?.floatingView?.let { view ->
+                // Create a bitmap with the view's width and height
+                val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                // Create a canvas with that bitmap
+                val canvas = android.graphics.Canvas(bitmap)
+                // Draw the view onto the canvas
+                view.draw(canvas)
+                return bitmap
+            }
+            return null
+        }
+
     }
 
     private lateinit var windowManager: WindowManager

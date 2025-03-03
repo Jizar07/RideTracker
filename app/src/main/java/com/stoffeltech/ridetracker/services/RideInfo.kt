@@ -10,5 +10,6 @@ data class RideInfo(
     val tripDistance: Double?,
     val pickupLocation: String?,
     val tripLocation: String?,
-    val stops: String?
+    val stops: String?,
+    val actionButton: String? = null
 )
