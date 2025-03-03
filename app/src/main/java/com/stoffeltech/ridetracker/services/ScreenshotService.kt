@@ -12,7 +12,8 @@ import java.util.*
 object ScreenshotService {
     var mediaProjection: android.media.projection.MediaProjection? = null
 
-    fun setMediaProjection(mp: android.media.projection.MediaProjection) {
+    // Renamed function to avoid clash with the property setter.
+    fun updateMediaProjection(mp: android.media.projection.MediaProjection) {
         mediaProjection = mp
     }
 

@@ -392,7 +392,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
             val mediaProjection = mediaProjectionManager.getMediaProjection(result.resultCode, result.data!!)
             // Set the MediaProjection instance in ScreenshotService
-            ScreenshotService.setMediaProjection(mediaProjection)
+            ScreenshotService.updateMediaProjection(mediaProjection)
         } else {
             Log.e("MainActivity", "Screen capture permission denied")
         }
