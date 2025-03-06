@@ -11,5 +11,10 @@ data class RideInfo(
     val pickupLocation: String?,
     val tripLocation: String?,
     val stops: String?,
-    val actionButton: String? = null
+    val actionButton: String? = null,
+
+    // -------------- NEW FIELDS --------------
+    val rideSubtype: String? = null,
+    val bonuses: String? = null,
+    val isExclusive: Boolean
 )

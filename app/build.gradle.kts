@@ -80,9 +80,18 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.google.mlkit:camera:16.0.0-beta3")
 
+
+
     implementation ("com.google.flogger:flogger:0.5.1")
 
     implementation ("com.google.firebase:firebase-messaging:24.1.0")
+
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    implementation("org.json:json:20210307")
+
+    // Optionally, if you want Retrofit later:
+     implementation("com.squareup.retrofit2:retrofit:2.9.0")
+     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

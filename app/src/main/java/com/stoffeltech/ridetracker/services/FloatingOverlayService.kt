@@ -30,7 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import com.stoffeltech.ridetracker.services.ScreenshotService
-
+import com.stoffeltech.ridetracker.uber.UberParser
 
 class FloatingOverlayService : Service() {
 
@@ -53,7 +53,6 @@ class FloatingOverlayService : Service() {
     lateinit var tvRatingValue: TextView
     lateinit var tvRatingLabel: TextView
     lateinit var tvStopsValue: TextView
-
 
     // Variables for dragging.
     private var initialX = 0
@@ -83,6 +82,12 @@ class FloatingOverlayService : Service() {
     private val minScale = 0.8f
     private val maxScale = 1.5f
 
+    // ---------------- OVERLAY AUTO-HIDE CHECK VARIABLES -----------------
+    // These variables will be used to schedule a periodic check that hides the overlay
+    // when no valid ride request has been detected within the threshold duration.
+    private lateinit var overlayCheckHandler: Handler
+    private lateinit var overlayCheckRunnable: Runnable
+
     companion object {
         private const val CHANNEL_ID = "FloatingOverlayServiceChannel"
         private const val NOTIFICATION_ID = 2
@@ -107,6 +112,7 @@ class FloatingOverlayService : Service() {
         @SuppressLint("SetTextI18n")
         fun updateOverlay(
             rideType: String,
+            isExclusive: Boolean,
             fare: String, fareColor: Int,
             pMile: String, pMileColor: Int,
             pHour: String, pHourColor: Int,
@@ -115,10 +121,18 @@ class FloatingOverlayService : Service() {
             profit: String, profitColor: Int,
             rating: String,
             stops: String
-        ) {
+        ){
             instance?.serviceScope?.launch {
                 instance?.floatingView?.visibility = View.VISIBLE
+                // Update ride type text and set color based on ride subtype.
                 instance?.tvRideTypeValue?.text = rideType
+                if (isExclusive) {
+                    // If the ride is exclusive, set the color to blue.
+                    instance?.tvRideTypeValue?.setTextColor(Color.parseColor("#088DA5"))
+                } else {
+                    // Otherwise, set the ride type color to white.
+                    instance?.tvRideTypeValue?.setTextColor(Color.WHITE)
+                }
                 instance?.tvFareValue?.text = fare
                 instance?.tvFareValue?.setTextColor(fareColor)
                 instance?.tvPMileValue?.text = pMile
@@ -151,9 +165,7 @@ class FloatingOverlayService : Service() {
                 }
                 // Trigger a full-screen screenshot including the floating overlay
                 instance?.let { service ->
-                    ScreenshotService.mediaProjection?.let { mp ->
-                        ScreenshotService.captureFullScreen(service, mp, rideType)
-                    } ?: Log.e("FloatingOverlayService", "MediaProjection not set, cannot capture screenshot")
+                    ScreenshotService.captureFullScreen(service, rideType)
                 }
             }
         }
@@ -228,10 +240,6 @@ class FloatingOverlayService : Service() {
         tvRatingValue = floatingView!!.findViewById(R.id.tvRatingValue)
         tvRatingLabel = floatingView!!.findViewById(R.id.tvRatingLabel)
         tvStopsValue = floatingView!!.findViewById(R.id.tvStopsValue)
-
-
-
-
 
         // Set up layout parameters.
         layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -308,6 +316,22 @@ class FloatingOverlayService : Service() {
 
         windowManager.addView(floatingView, layoutParams)
 
+        // ---------------- PERIODIC CHECK FOR VALID REQUEST ----------------
+        // This check hides the overlay if no valid ride request is detected.
+        // It uses UberParser.lastValidRequestTime, which should be updated whenever a valid request is processed.
+        overlayCheckHandler = Handler(Looper.getMainLooper())
+        overlayCheckRunnable = object : Runnable {
+            override fun run() {
+                // If no valid request was processed in the last 1 second, hide the overlay.
+                if (System.currentTimeMillis() - UberParser.lastValidRequestTime > 3000) {
+                    hideOverlay()
+                }
+                overlayCheckHandler.postDelayed(this, 1000)
+            }
+        }
+        overlayCheckHandler.postDelayed(overlayCheckRunnable, 1000)
+        // ---------------- END OVERLAY AUTO-HIDE CHECK -----------------
+
         // Capture the original dimensions of the overlay once it has been laid out.
         floatingView?.post {
             originalWidth = overlayContainer?.width ?: floatingView!!.width
@@ -324,35 +348,13 @@ class FloatingOverlayService : Service() {
     }
 
     private fun updateTextSizes(scale: Float) {
-        // Update each TextView's text size (in pixels) based on its original value.
-        tvRideTypeValue.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            origTextSizeRideType * scale
-        )
-        tvFareValue.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            origTextSizeFare * scale
-        )
-        tvPMileValue.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            origTextSizePMile * scale
-        )
-        tvPHourValue.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            origTextSizePHour * scale
-        )
-        tvMilesValue.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            origTextSizeMiles * scale
-        )
-        tvTimeValue.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            origTextSizeTime * scale
-        )
-        tvProfitLossValue.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            origTextSizeProfitLoss * scale
-        )
+        tvRideTypeValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeRideType * scale)
+        tvFareValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeFare * scale)
+        tvPMileValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizePMile * scale)
+        tvPHourValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizePHour * scale)
+        tvMilesValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeMiles * scale)
+        tvTimeValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeTime * scale)
+        tvProfitLossValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeProfitLoss * scale)
     }
 
     private fun runOnUiThread(action: () -> Unit) {
@@ -365,12 +367,14 @@ class FloatingOverlayService : Service() {
     }
 
     override fun onDestroy() {
+        overlayCheckHandler.removeCallbacks(overlayCheckRunnable)
         super.onDestroy()
         serviceScope.cancel()
         if (floatingView != null) {
             windowManager.removeView(floatingView)
         }
     }
+
 
     override fun onBind(intent: Intent?): IBinder? = null
 

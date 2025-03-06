@@ -2,6 +2,7 @@ package com.stoffeltech.ridetracker.uber
 
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
@@ -20,15 +21,64 @@ private var lastDeliveryRequestHash: Int? = null
 // New fingerprint variable for Uber ride requests to avoid duplicates.
 private var lastUberRequestFingerprint: String? = null
 
+
+
 object UberParser {
+    // ---------------- LAST VALID REQUEST TIMESTAMP -----------------
+// This variable is updated each time a valid ride request is processed.
+// It is later used by the overlay to determine whether to hide itself.
+    var lastValidRequestTime: Long = 0
 
     // Note: The longer alternatives are placed first so that, for example,
     // "UberX Priority" is matched before "UberX".
-    private val rideTypeRegex = Regex(
-        "(UberX Priority|UberX Reserve|Uber Black XL|Uber Connect XL|Uber Green|Green Comfort|Uber Black|UberX|UberXL|UberPool|Uber Connect|Uber Share|Comfort|Premier|Pet|Delivery)",
-        RegexOption.IGNORE_CASE
+    private val rideTypes = listOf(
+        "UberX Priority",
+        "UberX Reserve",
+        "Uber Black XL",
+        "Uber Connect XL",
+        "Uber Green",
+        "Green Comfort",
+        "Uber Black",
+        "UberX",
+        "UberXL",
+        "UberPool",
+        "Uber Connect",
+        "Uber Share",
+        "Comfort",
+        "Premier",
+        "Pet",
+        "Delivery"
     )
 
+    private val rideTypeRegex: Regex by lazy {
+        Regex(rideTypes.joinToString(separator = "|"), RegexOption.IGNORE_CASE)
+    }
+
+    // ---------------- NORMALIZE OCR TEXT FUNCTION ----------------
+    // This function manually scans the OCR text and replaces any occurrence
+    // of 'l' or 'L' (misinterpreted instead of '1') that immediately follows a digit.
+    private fun normalizeOcrText(text: String): String {
+        val sb = StringBuilder()
+        for (i in text.indices) {
+            val c = text[i]
+            // If the current character is 'l' or 'L' and the previous character is a digit, replace it with '1'
+            if ((c == 'l' || c == 'L') && i > 0 && text[i - 1].isDigit()) {
+                sb.append('1')
+            } else {
+                sb.append(c)
+            }
+        }
+        return sb.toString()
+    }
+
+    fun extractRideRequestText(fullText: String): String {
+        val match = rideTypeRegex.find(fullText)
+        return if (match != null) fullText.substring(match.range.first) else fullText
+    }
+
+    // ------------------------------------------------------------------------
+    //  A) Text Preprocessing Routines
+    // ------------------------------------------------------------------------
     private fun preprocessAccessibilityText(text: String): String {
         var result = text
         // List of ride types we expect
@@ -55,6 +105,31 @@ object UberParser {
         return result.trim()
     }
 
+    private fun prepareOcrTextForParsing(ocrText: String): String {
+        var text = ocrText
+
+        // Add newlines before ride types
+        for (rideType in rideTypes) {
+            text = text.replace(rideTypeRegex, "\n$0\n")
+        }
+
+        // Add newlines before fare amounts ($x.xx)
+        text = text.replace(Regex("(\\$\\d+\\.\\d{2})"), "\n$1\n")
+
+        // Add newlines around pickup/trip info (e.g., "10 mins (3.5 mi) away")
+        text = text.replace(Regex("(\\d+ mins? \\(.*?mi\\) away)"), "\n$1\n")
+        text = text.replace(Regex("(\\d+ mins? \\(.*?mi\\) trip)"), "\n$1\n")
+
+        // Add newlines before action buttons (Accept/Match)
+        text = text.replace(Regex("(Accept|Match)"), "\n$1\n")
+
+        // Trim extra spaces and lines
+        return text.lines().joinToString("\n") { it.trim() }.trim()
+    }
+
+    // ------------------------------------------------------------------------
+    //  B) Logging for debugging (now revised to your specified layout order)
+    // ------------------------------------------------------------------------
     fun logUberRideRequest(
         rideInfo: RideInfo,
         pickupLocation: String,
@@ -63,45 +138,102 @@ object UberParser {
         verified: Boolean
     ) {
         val sb = StringBuilder()
-        // Line 1: Ride type and close button
-        sb.appendLine("Ride Type: ${rideInfo.rideType ?: "Unknown"}    [Close: (x)]")
-        // Line 2: Fare information (fare, surge/bonus info could be appended here if available)
-        sb.appendLine("Fare: \$${rideInfo.fare ?: "N/A"}")
-        // Line 3: Rating (append " (Verified)" if the flag is true)
+
+        // 1) Ride Type
+        sb.appendLine("1) Ride Type: ${rideInfo.rideType ?: "Unknown"}")
+
+        // 2) Subtype (Exclusive)
+        if (!rideInfo.rideSubtype.isNullOrBlank()) {
+            sb.appendLine("2) Subtype: ${rideInfo.rideSubtype}")
+        } else {
+            sb.appendLine("2) Subtype: N/A")
+        }
+
+        // 3) Fare Price
+        sb.appendLine("3) Fare Price: \$${rideInfo.fare ?: "N/A"}")
+
+        // 4) Rating (append " (Verified)" if verified == true)
         val ratingText = rideInfo.rating?.toString() ?: "N/A"
         val verifiedText = if (verified) " (Verified)" else ""
-        sb.appendLine("Rating: $ratingText$verifiedText")
-        // Line 4: Pickup info
-        sb.appendLine("Pickup Info: ${rideInfo.pickupTime ?: "N/A"} mins (${rideInfo.pickupDistance ?: "N/A"} mi) away")
-        // Line 5: Pickup location (could span more than one line if needed)
-        sb.appendLine("Pickup Location: $pickupLocation")
-        // Line 6: Dropoff info (always in the format: e.g. "13 mins (4.8 mi) trip")
-        sb.appendLine("Dropoff Info: ${rideInfo.tripTime ?: "N/A"} mins (${rideInfo.tripDistance ?: "N/A"} mi) trip")
-        // Line 7: Dropoff location (again, may be multi-line)
-        sb.appendLine("Dropoff Location: $dropoffLocation")
-        // Add stops info:
+        sb.appendLine("4) Rating: $ratingText$verifiedText")
+
+        // 5) Bonuses
+        if (!rideInfo.bonuses.isNullOrBlank()) {
+            sb.appendLine("5) Bonuses: ${rideInfo.bonuses}")
+        } else {
+            sb.appendLine("5) Bonuses: None")
+        }
+
+        // 6) Pickup time and distance
+        sb.appendLine(
+            "6) Pickup Time/Distance: ${rideInfo.pickupTime ?: "N/A"} mins" +
+                    " (${rideInfo.pickupDistance ?: "N/A"} mi) away"
+        )
+
+        // 7) Pickup Location
+        sb.appendLine("7) Pickup Location: $pickupLocation")
+
+        // 8) Dropoff time and distance
+        sb.appendLine(
+            "8) Dropoff Time/Distance: ${rideInfo.tripTime ?: "N/A"} mins" +
+                    " (${rideInfo.tripDistance ?: "N/A"} mi) trip"
+        )
+
+        // 9) Dropoff Location
+        sb.appendLine("9) Dropoff Location: $dropoffLocation")
+
+        // 10) Special events (Stops)
         val stopsText = if (rideInfo.stops?.isNotEmpty() == true) rideInfo.stops else "None"
-        sb.appendLine("Stops: $stopsText")
-        // Bottom line: Action button (Accept or Match)
-        sb.appendLine("Action Button: $actionButton")
-        // Uncomment the line below to log details for debugging
+        sb.appendLine("10) Special Events: $stopsText")
+
+        // 11) Action Button
+        sb.appendLine("11) Action Button: $actionButton")
+
+        // Debug example:
         // Log.d("UberRideRequest", sb.toString())
     }
+    fun getRideTypes(): List<String> = rideTypes
 
+    // ------------------------------------------------------------------------
+    //  C) The parse(...) function, now capturing rideSubtype & bonuses
+    // ------------------------------------------------------------------------
     fun parse(cleanedText: String): RideInfo? {
-        // Preprocess the text (for accessibility we use the raw text trimmed)
-        val text = preprocessAccessibilityText(cleanedText)
+        // First, normalize the OCR text to correct misinterpretations (e.g., 'l' misread instead of '1')
+        val normalizedInput = normalizeOcrText(cleanedText)
+
+        // Log the normalized OCR text
+//        Log.d("UberParser", "Normalized OCR text in parse(): $normalizedInput")
+
+        // Then, preprocess the normalized text as usual
+        val text = normalizeOcrText(cleanedText)
+
+        // Log the preprocessed text for further clarity
+//        Log.d("UberParser", "Preprocessed text in parse(): $text")
 
         // --- Extract Ride Type ---
         val rideTypeMatch = rideTypeRegex.find(text)
         var rideType = rideTypeMatch?.value ?: "Unknown"
 
-        /* Checks if the ride type contains "Exclusive" (case-insensitive). If so, it marks the request
-         * as exclusive and removes that word from the ride type for clean processing.
+        /* Checks if the ride type contains "Exclusive" (case-insensitive).
+         * We'll store it in rideSubtype, but also remove it from the main rideType text
+         * so it doesn't break "Uber Black", "UberX", etc.
          */
-        val exclusive = rideType.contains("Exclusive", ignoreCase = true)
-        if (exclusive) {
+        // Determine if the text contains "Exclusive" anywhere.
+        val isExclusive = text.contains("Exclusive", ignoreCase = true)
+        // If found, remove the word "Exclusive" from the rideType string.
+        if (isExclusive) {
             rideType = rideType.replace("Exclusive", "", ignoreCase = true).trim()
+        }
+
+
+        // --- Parse "bonuses" lines, e.g. "5% Advantage included", "tip included", etc. ---
+        var bonuses: String? = null
+        // Example pattern matches anything that has "included" or "tip included" or "Advantage"
+        val bonusRegex = Regex("(\\d+%.*included|tip included|advantage included)", RegexOption.IGNORE_CASE)
+        val bonusMatches = bonusRegex.findAll(text).map { it.value.trim() }.toList()
+        if (bonusMatches.isNotEmpty()) {
+            // Combine all bonus lines into a single comma-separated string
+            bonuses = bonusMatches.joinToString(", ")
         }
 
         // --- Extract Fare ---
@@ -113,16 +245,19 @@ object UberParser {
             "$wholePart.$decimalPart".toDoubleOrNull()
         }
 
-        // --- Extract Rating ---
-        val ratingRegex = Regex("(\\d+(?:\\.\\d{2,3}))%")
+        // -------------------- ROBUST RATING EXTRACTION ---------------------
+        // Matches ratings with optional star and "Verified" suffix.
+        val ratingRegex = Regex("[★\\*]\\s*(\\d\\.\\d{2})(?=[^0-9]|$)", RegexOption.IGNORE_CASE)
+        val ratingMatch = ratingRegex.find(text)
         val extractedRating = ratingRegex.find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.let {
             if (it <= 5.0) it else 5.0
         }
+        // Check explicitly for "Verified" separately
+        val verified = text.contains("Verified", ignoreCase = true)
+        // --------------------------------------------------------------------
+
         // For Delivery requests, rating should be null.
         val rating = if (rideType.contains("Delivery", ignoreCase = true)) null else extractedRating
-
-        // --- Extract Verified flag ---
-        val verified = text.contains("Verified", ignoreCase = true)
 
         // --- Declare mutable variables for Time, Distance, and Location ---
         var pickupTime: Double? = null
@@ -174,8 +309,12 @@ object UberParser {
         // Extra info is available if needed: "Verified: $verified, Exclusive: $exclusive"
 
         // --- Validation: Ensure required fields are present ---
-        if (fare == null || pickupTime == null || (!rideType.contains("Delivery", ignoreCase = true) && tripTime == null)) return null
-
+        // For non-Delivery requests, we expect a pickupTime, fare, and tripTime at minimum.
+        if (fare == null || pickupTime == null ||
+            (!rideType.contains("Delivery", ignoreCase = true) && tripTime == null)
+        ) {
+            return null
+        }
 
         return RideInfo(
             rideType = rideType,
@@ -188,7 +327,10 @@ object UberParser {
             tripDistance = tripDistance,
             tripLocation = dropoffLocation,
             stops = stops,
-            actionButton = actionButton
+            actionButton = actionButton,
+            // Pass the flag – true if "Exclusive" was found, false otherwise.
+            isExclusive = isExclusive,
+            bonuses = bonuses
         )
     }
 
@@ -213,34 +355,58 @@ object UberParser {
      * @param serviceContext The AccessibilityService context (for preferences and logging).
      */
     @SuppressLint("DefaultLocale")
-    suspend fun processUberRideRequest(rawText: String, serviceContext: AccessibilityService) {
-        // -------------------- Block 1: Validate Input Text --------------------
-        val trimmedText = rawText.trim()
-        if (!trimmedText.endsWith("Accept", ignoreCase = true) && !trimmedText.endsWith("Match", ignoreCase = true)) {
-//            Log.d("UberParser", "Incomplete ride request text received; skipping processing: $rawText")
+    suspend fun processUberRideRequest(rawText: String, context: Context) {
+        // Normalize and trim the raw OCR text
+        val trimmedText = normalizeOcrText(rawText.trim())
+//        Log.d("UberParser", "Normalized text in processUberRideRequest: $trimmedText")
+
+        // Early return if text does not contain required keywords
+        if (!trimmedText.contains("Accept", ignoreCase = true) && !trimmedText.contains("Match", ignoreCase = true)) {
             return
         }
 
-        // -------------------- Block 2: Extract Candidate Ride Block --------------------
-        val requiredKeywords = listOf("\\$", "mi", "mins", "trip", "away", "Verified", "Accept", "Match")
-        val candidateBlocks = trimmedText.split("\n").map { it.trim() }
-            .filter { block -> requiredKeywords.all { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(block) } }
-        val tripRequestText = if (candidateBlocks.isNotEmpty()) {
-            candidateBlocks.maxByOrNull { block ->
-                requiredKeywords.sumOf { Regex(it, RegexOption.IGNORE_CASE).findAll(block).count() }
-            } ?: trimmedText
+        // Choose the proper preprocessor based on OS version (if needed)
+        val preparedText = if (android.os.Build.VERSION.SDK_INT < 34) {
+            Log.d("UberParser", "Using ACC processing (Android <= 13)")
+            preprocessAccessibilityText(trimmedText)
         } else {
-            trimmedText
+            Log.d("UberParser", "Using OCR processing (Android 14+)")
+            prepareOcrTextForParsing(trimmedText)
         }
 
-        // -------------------- Block 3: Parse Ride Information --------------------
-        val rideInfo = parse(trimmedText)
+//        Log.d("UberParser", "Prepared text for parsing: $preparedText")
+
+        // Parse the prepared text to extract ride information
+        val rideInfo = parse(preparedText)
         if (rideInfo == null) {
+
             FloatingOverlayService.hideOverlay()
             return
         }
 
-        // -------------------- Block 4: Validate Extracted Ride Fields --------------------
+        // ---------------- UPDATE LAST VALID REQUEST TIME -----------------
+        // We update the timestamp to the current time every time a valid ride request is received.
+        lastValidRequestTime = System.currentTimeMillis()
+
+        // --- Insert the debug log here ---
+        Log.d("UberParser", """
+        Parsed RideInfo:
+        rideType = ${rideInfo.rideType},
+        fare = ${rideInfo.fare},
+        rating = ${rideInfo.rating},
+        pickupTime = ${rideInfo.pickupTime},
+        pickupDistance = ${rideInfo.pickupDistance},
+        pickupLocation = ${rideInfo.pickupLocation},
+        tripTime = ${rideInfo.tripTime},
+        tripDistance = ${rideInfo.tripDistance},
+        tripLocation = ${rideInfo.tripLocation},
+        stops = ${rideInfo.stops},
+        actionButton = ${rideInfo.actionButton},
+        rideSubtype = ${rideInfo.rideSubtype},
+        bonuses = ${rideInfo.bonuses}
+    """.trimIndent())
+
+        // Extract ride details for calculations
         val fareVal = rideInfo.fare ?: 0.0
         val pickupDistanceVal = rideInfo.pickupDistance ?: 0.0
         val tripDistanceVal = rideInfo.tripDistance ?: 0.0
@@ -249,73 +415,45 @@ object UberParser {
         val tripTimeVal = rideInfo.tripTime ?: 0.0
         val totalMinutes = pickupTimeVal + tripTimeVal
 
-        val validAction = tripRequestText.contains("Accept", ignoreCase = true) ||
-                          tripRequestText.contains("Match", ignoreCase = true)
-
-        // -------------------- Block 5: Check for Duplicate Ride Requests --------------------
-        val prefs = PreferenceManager.getDefaultSharedPreferences(serviceContext)
+        // Retrieve SharedPreferences using the new context parameter
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
         val adjustedFare = fareVal + bonus
         val fingerprint = "$adjustedFare-$totalMiles-$totalMinutes"
+
         if (fingerprint == lastUberRequestFingerprint) {
-//            Log.d("UberParser", "Duplicate ride request detected; skipping processing.")
             return
         }
         lastUberRequestFingerprint = fingerprint
 
-        // -------------------- Block 6: Separate Delivery from Ride --------------------
-        if (rideInfo.rideType.equals("Delivery", ignoreCase = true)) {
-            // For Delivery requests, log and process using delivery-specific flow.
-            logUberRideRequest(rideInfo, "", "", rideInfo.actionButton ?: "N/A", false)
-            processDeliveryRequest(rideInfo, bonus, prefs)
-            return
-        }
-
-        // -------------------- Block 7: Process Ride Requests --------------------
-        // Log ride details
-        logUberRideRequest(rideInfo, "", "", rideInfo.actionButton ?: "N/A", false)
-
-        // Calculate additional metrics for ride requests
-        val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
-        val pricePerHour = if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0
-
-        val pmileColor = when {
-            pricePerMile < prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f) -> Color.RED
-            pricePerMile < prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f) -> Color.YELLOW
-            else -> Color.GREEN
-        }
-        val phourColor = when {
-            pricePerHour < prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f) -> Color.RED
-            pricePerHour < prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f) -> Color.YELLOW
-            else -> Color.GREEN
-        }
-        val fareColor = when {
-            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> Color.RED
-            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> Color.YELLOW
-            else -> Color.GREEN
-        }
-
-        // -------------------- Block 8: Update the Floating Overlay --------------------
+        // Continue with further processing (logging, metrics, overlay update, etc.)
+        // For example:
         FloatingOverlayService.updateOverlay(
             rideType = rideInfo.rideType ?: "Unknown",
+            isExclusive = rideInfo.isExclusive, // Pass rideSubtype here.
             fare = "$${String.format("%.2f", adjustedFare)}",
-            fareColor = fareColor,
-            pMile = "$${String.format("%.2f", pricePerMile)}",
-            pMileColor = pmileColor,
-            pHour = "$${String.format("%.2f", pricePerHour)}",
-            pHourColor = phourColor,
+            fareColor = when {
+                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> android.graphics.Color.RED
+                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> android.graphics.Color.YELLOW
+                else -> android.graphics.Color.GREEN
+            },
+            pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
+            pMileColor = android.graphics.Color.GREEN,
+            pHour = "$${String.format("%.2f", if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0)}",
+            pHourColor = android.graphics.Color.GREEN,
             miles = String.format("%.1f", totalMiles),
             minutes = String.format("%.1f", totalMinutes),
             profit = "$${String.format("%.2f", adjustedFare - (prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles))}",
-            profitColor = if (adjustedFare - (prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles) >= 0) Color.GREEN else Color.RED,
+            profitColor = android.graphics.Color.GREEN,
             rating = rideInfo.rating?.toString() ?: "N/A",
             stops = rideInfo.stops ?: ""
         )
-        // Schedule the overlay to hide after 6 seconds.
-        Handler(Looper.getMainLooper()).postDelayed({
-            FloatingOverlayService.hideOverlay()
-        }, 15000)
+
+        // ---------------- REMOVED FIXED HIDE OVERLAY DELAY -----------------
+        // The fixed delayed hide call has been removed. The overlay will now auto-hide
+        // based on the periodic check implemented in FloatingOverlayService.
     }
+
 
     /**
      * Processes Delivery requests separately.
@@ -362,23 +500,41 @@ object UberParser {
         // Now update the overlay. Here, rideType, total minutes (time), and total miles (distance)
         // are all provided to the overlay, so that the user sees the ride type along with the time and distance.
         FloatingOverlayService.updateOverlay(
-            rideType = rideInfo.rideType ?: "Delivery",
+            rideType = rideInfo.rideType ?: "Unknown",
+            isExclusive = rideInfo.isExclusive, // Pass rideSubtype here.
             fare = "$${String.format("%.2f", adjustedFare)}",
-            fareColor = fareColor,
-            pMile = "$${String.format("%.2f", pricePerMile)}",
-            pMileColor = pmileColor,
-            pHour = "$${String.format("%.2f", pricePerHour)}",
-            pHourColor = phourColor,
-            miles = String.format("%.1f", totalMiles),   // Total distance
-            minutes = String.format("%.1f", totalMinutes), // Total time
-            profit = "$${String.format("%.2f", profit)}",
-            profitColor = profitColor,
-            rating = "N/A", // Delivery requests do not include a rating.
+            fareColor = when {
+                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> android.graphics.Color.RED
+                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> android.graphics.Color.YELLOW
+                else -> android.graphics.Color.GREEN
+            },
+            pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
+            pMileColor = android.graphics.Color.GREEN,
+            pHour = "$${String.format("%.2f", if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0)}",
+            pHourColor = android.graphics.Color.GREEN,
+            miles = String.format("%.1f", totalMiles),
+            minutes = String.format("%.1f", totalMinutes),
+            profit = "$${String.format("%.2f", adjustedFare - (prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles))}",
+            profitColor = android.graphics.Color.GREEN,
+            rating = rideInfo.rating?.toString() ?: "N/A",
             stops = rideInfo.stops ?: ""
         )
-        // Schedule the overlay to hide after 6 seconds.
+        // Schedule the overlay to hide after 15 seconds.
         Handler(Looper.getMainLooper()).postDelayed({
             FloatingOverlayService.hideOverlay()
         }, 15000)
     }
+
+    /**
+     * Determines if text likely represents a valid Uber ride request
+     * (based on minimal fields like fare, pickup time, and possibly trip time).
+     */
+    fun isValidRideRequest(text: String): Boolean {
+        val rideInfo = parse(text)
+        return rideInfo?.fare != null && rideInfo.fare > 0.0 &&
+                rideInfo.pickupTime != null && rideInfo.pickupTime > 0.0 &&
+                (rideInfo.rideType?.contains("Delivery", ignoreCase = true) == true ||
+                        (rideInfo.tripTime != null && rideInfo.tripTime > 0.0))
+    }
+
 }

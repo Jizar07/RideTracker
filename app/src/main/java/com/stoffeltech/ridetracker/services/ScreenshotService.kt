@@ -2,12 +2,15 @@ package com.stoffeltech.ridetracker.services
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Bitmap.CompressFormat
 import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.os.Environment
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import android.view.WindowManager
@@ -15,37 +18,58 @@ import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import com.stoffeltech.ridetracker.uber.UberParser
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
+/**
+ * ---------------- SCREENSHOT SERVICE ----------------
+ * This service handles capturing a full-screen screenshot when the overlay pops up.
+ * The screenshot is saved into a specific folder structure under the Pictures directory.
+ *
+ * Changes implemented:
+ * 1. Refactored captureFullScreen to use the centralized MediaProjection from MediaProjectionLifecycleManager.
+ * 2. Prevents duplicate screenshots by using a timestamp check.
+ * 3. Keeps the existing file organization and screenshot saving logic.
+ */
 object ScreenshotService {
+
+    // ---------------- GLOBAL VARIABLE FOR DUPLICATE SCREENSHOT PREVENTION -----------------
+    // Prevents taking multiple screenshots in quick succession.
+    private var lastScreenshotTime: Long = 0
+    private const val SCREENSHOT_INTERVAL_MS = 5000L // 5 seconds between screenshots
+
+    // Delay before taking the screenshot (milliseconds) to ensure the overlay is visible.
+    private const val CAPTURE_DELAY_MS = 1000L  // 1 second delay
+
     /**
+     * ---------------- SAVE SCREENSHOT - START -----------------
      * Saves the provided bitmap as a PNG file under a folder named "Ride Tracker".
      * The screenshot will be stored in a subfolder for the given ride type.
      */
-    var mediaProjection: android.media.projection.MediaProjection? = null
-
-
     fun saveScreenshot(bitmap: Bitmap, rideType: String) {
         // Get the public Pictures directory.
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-
         // Create (or reuse) the main folder "Ride Tracker".
         val appFolder = File(picturesDir, "Ride Tracker")
         if (!appFolder.exists()) {
             appFolder.mkdirs()
         }
-
         // Create (or reuse) the subfolder for the ride type.
         val rideFolder = File(appFolder, rideType)
         if (!rideFolder.exists()) {
             rideFolder.mkdirs()
         }
-
         // Generate a unique file name with a timestamp.
         val dateFormat = SimpleDateFormat("MM-dd-yy_hhmmssa", Locale.getDefault())
         val timestamp = dateFormat.format(Date())
         val filename = "${rideType}_${timestamp}.png"
         val file = File(rideFolder, filename)
-
         try {
             FileOutputStream(file).use { fos ->
                 bitmap.compress(CompressFormat.PNG, 100, fos)
@@ -55,50 +79,36 @@ object ScreenshotService {
             Log.e("ScreenshotService", "❌ Error saving screenshot: ${e.message}")
         }
     }
+    // ---------------- SAVE SCREENSHOT - END -----------------
+
+    /**
+     * ---------------- CAPTURE FULL SCREEN SCREENSHOT - START -----------------
+     * Captures a full-screen screenshot using the centralized MediaProjection.
+     * The screenshot is saved in a specific folder based on rideType.
+     *
+     * @param context The application context.
+     * @param rideType The ride type string used for naming the screenshot.
+     */
     @SuppressLint("ServiceCast")
-    fun captureFullScreen(context: Context, mp: android.media.projection.MediaProjection, rideType: String) {
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val metrics = context.resources.displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val density = metrics.densityDpi
+    fun captureFullScreen(context: Context, rideType: String) {
+        // ---------------- DUPLICATE SCREENSHOT PREVENTION -----------------
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastScreenshotTime < SCREENSHOT_INTERVAL_MS) {
+            Log.d("ScreenshotService", "Screenshot recently taken. Skipping duplicate capture.")
+            return
+        }
+        lastScreenshotTime = currentTime
 
-        // Create an ImageReader to capture the screen
-        val imageReader = ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 2)
-
-        // Create a VirtualDisplay using MediaProjection
-        val virtualDisplay = mp.createVirtualDisplay(
-            "ScreenCapture",
-            width,
-            height,
-            density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader.surface,
-            null,
-            null
-        )
-
-        // Delay slightly to ensure an image is available
+        // Wait for a short delay to allow the overlay to fully render.
         Handler(Looper.getMainLooper()).postDelayed({
-            val image = imageReader.acquireLatestImage()
-            if (image != null) {
-                val planes = image.planes
-                val buffer = planes[0].buffer
-                val pixelStride = planes[0].pixelStride
-                val rowStride = planes[0].rowStride
-                val rowPadding = rowStride - pixelStride * width
-                val bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
-                bitmap.copyPixelsFromBuffer(buffer)
-                image.close()
-                virtualDisplay.release()
-                imageReader.close()
-
-                // Save the captured screenshot
-                saveScreenshot(bitmap, rideType)
+            val capturedBitmap = ScreenCaptureService.lastCapturedBitmap
+            if (capturedBitmap != null) {
+                Log.d("ScreenshotService", "Capturing screenshot after delay.")
+                saveScreenshot(capturedBitmap, rideType)
             } else {
-                Log.e("ScreenshotService", "Failed to capture image from ImageReader")
+                Log.e("ScreenshotService", "No captured bitmap available for screenshot.")
             }
-        }, 2000)
+        }, CAPTURE_DELAY_MS)
     }
-
+    // ---------------- CAPTURE FULL SCREEN SCREENSHOT - END -----------------
 }

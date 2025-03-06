@@ -48,6 +48,8 @@ import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.net.PlacesClient
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.stoffeltech.ridetracker.future.LoginActivity
+import com.stoffeltech.ridetracker.future.UberApiTest
 import com.stoffeltech.ridetracker.services.FloatingOverlayService
 import com.stoffeltech.ridetracker.services.FloatingOverlayService.Companion.hideOverlay
 import com.stoffeltech.ridetracker.services.ScreenshotService
@@ -58,9 +60,15 @@ import com.stoffeltech.ridetracker.utils.DirectionsHelper
 import com.stoffeltech.ridetracker.utils.DistanceTracker
 import com.stoffeltech.ridetracker.utils.RevenueTracker
 import com.stoffeltech.ridetracker.utils.TimeTracker
+import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager // NEW: centralized MP manager
+import com.stoffeltech.ridetracker.services.AccessibilityService
+import com.stoffeltech.ridetracker.services.ScreenCaptureService
+import com.stoffeltech.ridetracker.uber.UberParser
+import com.stoffeltech.ridetracker.utils.LogHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.*
 
 fun isNotificationAccessEnabled(context: Context): Boolean {
     val pkgName = context.packageName
@@ -77,7 +85,6 @@ fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean 
 class RideTrackerApplication : android.app.Application() {
     override fun onCreate() {
         super.onCreate()
-        LogHelper.logInfo("RideTrackerApplication", "Application initialized")
     }
 }
 
@@ -96,6 +103,7 @@ fun getColorWithOpacity(color: Int, opacityPercent: Int): Int {
 
 private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 private val STORAGE_PERMISSION_REQUEST_CODE = 1001
+
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
@@ -229,10 +237,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             Toast.makeText(this, "Please grant notification access...", Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-        if (!isAccessibilityServiceEnabled(this, com.stoffeltech.ridetracker.services.AccessibilityService::class.java)) {
-            Toast.makeText(this, "Please enable RideTracker Accessibility Service...", Toast.LENGTH_LONG).show()
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
+        // Disabled for testing: Accessibility Service check
+         if (!isAccessibilityServiceEnabled(this, com.stoffeltech.ridetracker.services.AccessibilityService::class.java)) {
+             Toast.makeText(this, "Please enable RideTracker Accessibility Service...", Toast.LENGTH_LONG).show()
+             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+         }
+
         if (!com.stoffeltech.ridetracker.utils.hasUsageStatsPermission(this)) {
             Toast.makeText(this, "Please grant usage access permission...", Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -296,7 +306,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         DistanceTracker.startTracking()
 
         updateTimeUI()
-        requestScreenCapturePermission()
     }
 
     private fun launchApp(packageName: String, activityClassName: String? = null) {
@@ -345,6 +354,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 shouldUpdateCamera = false
             }
         }
+        // ---------------- REQUEST MEDIA PROJECTION PERMISSION - Start ----------------
+        // Check if MediaProjection is valid. If not, request screen capture permission.
+        if (!com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager.isMediaProjectionValid()) {
+            requestScreenCapturePermission()  // This method exists in MainActivity and initiates the permission request.
+            Log.d("MainActivity", "Requested MediaProjection permission after map load.")
+        }
+// ---------------- REQUEST MEDIA PROJECTION PERMISSION - End ----------------
+
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
@@ -366,17 +383,52 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
     private val screenCaptureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-            val mediaProjection = mediaProjectionManager.getMediaProjection(result.resultCode, result.data!!)
-            ScreenshotService.mediaProjection = mediaProjection
-            Log.d("MainActivity", "MediaProjection set successfully")
-            // Now start the overlay service if it isn’t already running:
-            startOverlayService()
+            result.data?.let { data ->
+                val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+                // Use the centralized MediaProjectionLifecycleManager to start MediaProjection.
+                com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager.startMediaProjection(this, result.resultCode, data)
+                Log.d("MainActivity", "MediaProjection set successfully")
+                // ---- Launch OCR within a coroutine ----
+                lifecycleScope.launch(Dispatchers.IO) {
+                    ScreenCaptureService.continuouslyCaptureAndSendOcr(
+                        this@MainActivity,
+                        MediaProjectionLifecycleManager.getMediaProjection()!!
+                    ) { ocrText ->
+//                        Log.d("MainActivity", "OCR callback fired, received text: $ocrText")
+
+                        // Retrieve the valid ride types from UberParser
+                        val rideTypes = UberParser.getRideTypes()
+                        var filteredText = ocrText
+                        // Look for the earliest occurrence of any ride type (ignoring case)
+                        var earliestIndex = Int.MAX_VALUE
+                        for (ride in rideTypes) {
+                            val idx = ocrText.indexOf(ride, ignoreCase = true)
+                            if (idx != -1 && idx < earliestIndex) {
+                                earliestIndex = idx
+                            }
+                        }
+                        if (earliestIndex != Int.MAX_VALUE) {
+                            filteredText = ocrText.substring(earliestIndex)
+                        }
+//                        Log.d("MainActivity", "Filtered OCR text (from first ride type onward): $filteredText")
+
+                        // Forward the filtered text to UberParser for further processing
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            UberParser.processUberRideRequest(filteredText, this@MainActivity)
+                        }
+                    }
+                }
+
+                // ------------------------------------------------
+
+                startOverlayService()
+            } ?: run {
+                Log.e("MainActivity", "Screen capture permission granted but result.data is null")
+            }
         } else {
             Log.e("MainActivity", "Screen capture permission denied")
         }
     }
-
 
     private fun selectFileForOCR() {
         filePickerLauncher.launch("image/*")
@@ -404,7 +456,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
                 val extractedText = visionText.text
-                LogHelper.logDebug("RideTracker", "Extracted OCR Text: $extractedText")
+//                LogHelper.logDebug("RideTracker", "Extracted OCR Text: $extractedText")
             }
             .addOnFailureListener { e ->
                 LogHelper.logError("RideTracker", "OCR Failed: ${e.message}", e)
@@ -434,7 +486,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         fusedLocationClient.lastLocation.addOnSuccessListener { location ->
             if (location != null) {
-                LogHelper.logDebug("MainActivity", "Retrieved last location: ${location.latitude}, ${location.longitude}")
+//                LogHelper.logDebug("MainActivity", "Retrieved last location: ${location.latitude}, ${location.longitude}")
                 val currentLatLng = LatLng(location.latitude, location.longitude)
                 lifecycleScope.launch {
                     val poiResults = fetchNearbyPOIs(currentLatLng, 25.0)
@@ -612,34 +664,39 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) {
-
             TimeTracker.stopTracking(this)
             DistanceTracker.stopTracking(this)
-            updateEarningsUI()
             hideOverlay()
-            LogHelper.logDebug("MainActivity", "ScreenCaptureService stopped because app is closing.")
+            updateEarningsUI()
+        }
+        // Only stop MediaProjection if the activity is finishing and not merely undergoing a configuration change.
+        if (isFinishing && !isChangingConfigurations) {
+            // Instead of directly stopping MediaProjection here, we now delegate to our centralized manager.
+            com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager.stopMediaProjection()
+            LogHelper.logDebug("MainActivity", "MediaProjection stopped on activity destroy.")
+        } else {
+            LogHelper.logDebug("MainActivity", "Activity destroyed due to configuration change; keeping MediaProjection alive.")
         }
     }
-}
 
-// ============================================================
-// LOGGING SECTION
-// ============================================================
+    // ============================================================
+    // LOGGING SECTION
+    // ============================================================
+    /**
+     * LogHelper centralizes all logging for the app.
+     * Toggle LOG_ENABLED to turn logging on or off.
+     */
+    object LogHelper {
+        private const val LOG_ENABLED = true
 
-/**
- * LogHelper centralizes all logging for the app.
- * Toggle LOG_ENABLED to turn logging on or off.
- */
-object LogHelper {
-    private const val LOG_ENABLED = true
-
-    fun logInfo(tag: String, message: String) {
-        if (LOG_ENABLED) android.util.Log.i(tag, message)
-    }
-    fun logDebug(tag: String, message: String) {
-        if (LOG_ENABLED) android.util.Log.d(tag, message)
-    }
-    fun logError(tag: String, message: String, throwable: Throwable?) {
-        if (LOG_ENABLED) android.util.Log.e(tag, message, throwable)
+        fun logInfo(tag: String, message: String) {
+            if (LOG_ENABLED) android.util.Log.i(tag, message)
+        }
+        fun logDebug(tag: String, message: String) {
+            if (LOG_ENABLED) android.util.Log.d(tag, message)
+        }
+        fun logError(tag: String, message: String, throwable: Throwable?) {
+            if (LOG_ENABLED) android.util.Log.e(tag, message, throwable)
+        }
     }
 }
