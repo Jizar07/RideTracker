@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
  * to UberParser when the event comes from the Uber app.
  *
  * This updated version specifically looks for the earnings update string. It expects the
- * daily earnings to be found as a dollar amount following "Waybill" (e.g., "Waybill$0.00").
+ * daily earnings to be found as a dollar amount following "TODAY" (e.g., "$0.00TODAY").
  */
 class AccessibilityService : AccessibilityService() {
 
@@ -52,14 +52,17 @@ class AccessibilityService : AccessibilityService() {
             Log.d("AccessibilityService", "Extracted text from event: $detectedText")
 
             // ---------------- SPECIFIC EARNINGS EXTRACTION -----------------
-            // Look for the specific earnings string following "Waybill"
-            val earningsRegex = Regex("Waybill\\$(\\d+\\.\\d{2})")
+            // Look for the specific earnings string following "TODAY"
+            // New regex to capture the dollar amount immediately before "TODAY"
+            // This will look for a "$", capture one or more digits, a period, and exactly two digits, then "TODAY".
+            val earningsRegex = Regex("\\$(\\d+\\.\\d{2})TODAY")
+
             val earningsMatch = earningsRegex.find(detectedText)
             if (earningsMatch != null) {
                 val earningsStr = earningsMatch.groupValues[1]
                 val currentDailyEarnings = earningsStr.toDoubleOrNull() ?: 0.0
                 // Log the extracted earnings value.
-                Log.d("AccessibilityService", "Extracted daily earnings from 'Waybill': $$currentDailyEarnings")
+                Log.d("AccessibilityService", "Extracted daily earnings from 'TODAY': $$currentDailyEarnings")
                 // If the new earnings value is greater than the last extracted, update RevenueTracker.
                 if (currentDailyEarnings > lastExtractedDailyEarnings) {
                     val delta = currentDailyEarnings - lastExtractedDailyEarnings

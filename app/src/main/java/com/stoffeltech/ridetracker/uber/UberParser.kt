@@ -379,6 +379,7 @@ object UberParser {
         // Parse the prepared text to extract ride information
         val rideInfo = parse(preparedText)
         if (rideInfo == null) {
+            Log.d("UberParser", "Parsed ride info is null. Hiding overlay. Raw text: $preparedText")
 
             FloatingOverlayService.hideOverlay()
             return
@@ -426,32 +427,56 @@ object UberParser {
         }
         lastUberRequestFingerprint = fingerprint
 
-        // Continue with further processing (logging, metrics, overlay update, etc.)
-        // For example:
+        // --- Compute colors for each metric (new additions) ---
+        // Compute fare color
+        val computedFareColor = when {
+            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> Color.RED
+            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> Color.YELLOW
+            else -> Color.GREEN
+        }
+
+        // Compute price per mile and its color
+        val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
+        val computedPMileColor = when {
+            pricePerMile < prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f) -> Color.RED
+            pricePerMile < prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f) -> Color.YELLOW
+            else -> Color.GREEN
+        }
+
+        // Compute price per hour and its color
+        val pricePerHour = if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0
+        val computedPHourColor = when {
+            pricePerHour < prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f) -> Color.RED
+            pricePerHour < prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f) -> Color.YELLOW
+            else -> Color.GREEN
+        }
+
+        // Compute profit and its color
+        val drivingCost = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles
+        val profit = adjustedFare - drivingCost
+        val computedProfitColor = if (profit >= 0) Color.GREEN else Color.RED
+
+        // Compute rating color
+        val currentRating = rideInfo.rating?.toFloat() ?: 0f
+        val computedRatingColor = if (currentRating >= prefs.getFloat(SettingsActivity.KEY_RATING_THRESHOLD, 4.70f)) Color.GREEN else Color.RED
+
+        // --- Update the overlay using the computed colors ---
         FloatingOverlayService.updateOverlay(
             rideType = rideInfo.rideType ?: "Unknown",
-            isExclusive = rideInfo.isExclusive, // Pass rideSubtype here.
+            isExclusive = rideInfo.isExclusive, // Pass rideSubtype flag as needed
             fare = "$${String.format("%.2f", adjustedFare)}",
-            fareColor = when {
-                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> android.graphics.Color.RED
-                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> android.graphics.Color.YELLOW
-                else -> android.graphics.Color.GREEN
-            },
+            fareColor = computedFareColor,
             pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
-            pMileColor = android.graphics.Color.GREEN,
+            pMileColor = computedPMileColor,  // Use computed price-per-mile color
             pHour = "$${String.format("%.2f", if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0)}",
-            pHourColor = android.graphics.Color.GREEN,
+            pHourColor = computedPHourColor,  // Use computed price-per-hour color
             miles = String.format("%.1f", totalMiles),
             minutes = String.format("%.1f", totalMinutes),
-            profit = "$${String.format("%.2f", adjustedFare - (prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles))}",
-            profitColor = android.graphics.Color.GREEN,
+            profit = "$${String.format("%.2f", profit)}",
+            profitColor = computedProfitColor, // Use computed profit color
             rating = rideInfo.rating?.toString() ?: "N/A",
             stops = rideInfo.stops ?: ""
         )
-
-        // ---------------- REMOVED FIXED HIDE OVERLAY DELAY -----------------
-        // The fixed delayed hide call has been removed. The overlay will now auto-hide
-        // based on the periodic check implemented in FloatingOverlayService.
     }
 
 
@@ -503,19 +528,15 @@ object UberParser {
             rideType = rideInfo.rideType ?: "Unknown",
             isExclusive = rideInfo.isExclusive, // Pass rideSubtype here.
             fare = "$${String.format("%.2f", adjustedFare)}",
-            fareColor = when {
-                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> android.graphics.Color.RED
-                adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> android.graphics.Color.YELLOW
-                else -> android.graphics.Color.GREEN
-            },
+            fareColor = fareColor,
             pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
-            pMileColor = android.graphics.Color.GREEN,
+            pMileColor = pmileColor,
             pHour = "$${String.format("%.2f", if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0)}",
-            pHourColor = android.graphics.Color.GREEN,
+            pHourColor = phourColor,
             miles = String.format("%.1f", totalMiles),
             minutes = String.format("%.1f", totalMinutes),
             profit = "$${String.format("%.2f", adjustedFare - (prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles))}",
-            profitColor = android.graphics.Color.GREEN,
+            profitColor = profitColor,
             rating = rideInfo.rating?.toString() ?: "N/A",
             stops = rideInfo.stops ?: ""
         )

@@ -66,6 +66,7 @@ import com.stoffeltech.ridetracker.services.ScreenCaptureService
 import com.stoffeltech.ridetracker.uber.UberParser
 import com.stoffeltech.ridetracker.utils.LogHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -211,6 +212,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // STEP 1: Check for overlay permission
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Please enable overlay permission", Toast.LENGTH_LONG).show()
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            startActivity(intent)
+            // Optionally finish to force a restart later
+            finish()
+            return
+        }
+
         setContentView(R.layout.activity_main)
         tvCurrentSpeed = findViewById(R.id.tvCurrentSpeed)
         ivModeSwitch = findViewById(R.id.ivModeSwitch)
@@ -333,6 +345,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
+
         mMap = googleMap
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             mMap.isMyLocationEnabled = true
@@ -355,12 +368,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
         // ---------------- REQUEST MEDIA PROJECTION PERMISSION - Start ----------------
-        // Check if MediaProjection is valid. If not, request screen capture permission.
-        if (!com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager.isMediaProjectionValid()) {
-            requestScreenCapturePermission()  // This method exists in MainActivity and initiates the permission request.
-            Log.d("MainActivity", "Requested MediaProjection permission after map load.")
+        // In onMapReady() in MainActivity.kt:
+        if (!MediaProjectionLifecycleManager.isMediaProjectionValid()) {
+            requestScreenCapturePermission()  // Launch permission request.
+            Log.d("MainActivity", "MediaProjection token invalid. Requesting new permission.")
+            return  // Exit onMapReady to avoid starting services with an invalid token.
+        } else {
+            // Safe to start the overlay service.
+            startOverlayService()
         }
-// ---------------- REQUEST MEDIA PROJECTION PERMISSION - End ----------------
+
+        // ---------------- REQUEST MEDIA PROJECTION PERMISSION - End ----------------
 
     }
 
@@ -381,47 +399,51 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
     }
+    // ---------------------- UPDATED SCREEN CAPTURE LAUNCHER ----------------------
+// This callback delays the MediaProjection start until after the FloatingOverlayService is running.
     private val screenCaptureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.let { data ->
-                val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-                // Use the centralized MediaProjectionLifecycleManager to start MediaProjection.
-                com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager.startMediaProjection(this, result.resultCode, data)
-                Log.d("MainActivity", "MediaProjection set successfully")
-                // ---- Launch OCR within a coroutine ----
-                lifecycleScope.launch(Dispatchers.IO) {
-                    ScreenCaptureService.continuouslyCaptureAndSendOcr(
-                        this@MainActivity,
-                        MediaProjectionLifecycleManager.getMediaProjection()!!
-                    ) { ocrText ->
-//                        Log.d("MainActivity", "OCR callback fired, received text: $ocrText")
+                // Delay MediaProjection start by 500 ms to ensure FloatingOverlayService has already started.
+                Handler(Looper.getMainLooper()).postDelayed({
+                    // Start (or update) MediaProjection using your centralized manager.
+                    MediaProjectionLifecycleManager.startMediaProjection(this, result.resultCode, data)
+                    Log.d("MainActivity", "MediaProjection set successfully after delay")
 
-                        // Retrieve the valid ride types from UberParser
-                        val rideTypes = UberParser.getRideTypes()
-                        var filteredText = ocrText
-                        // Look for the earliest occurrence of any ride type (ignoring case)
-                        var earliestIndex = Int.MAX_VALUE
-                        for (ride in rideTypes) {
-                            val idx = ocrText.indexOf(ride, ignoreCase = true)
-                            if (idx != -1 && idx < earliestIndex) {
-                                earliestIndex = idx
+                    // Now check that we have a valid MediaProjection token.
+                    val mediaProjection = MediaProjectionLifecycleManager.getMediaProjection()
+                    if (mediaProjection != null) {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            // Optionally delay a little more if needed
+                            delay(500)
+                            ScreenCaptureService.continuouslyCaptureAndSendOcr(
+                                this@MainActivity,
+                                mediaProjection
+                            ) { ocrText ->
+                                // Process OCR text as before.
+                                val rideTypes = UberParser.getRideTypes()
+                                var filteredText = ocrText
+                                var earliestIndex = Int.MAX_VALUE
+                                for (ride in rideTypes) {
+                                    val idx = ocrText.indexOf(ride, ignoreCase = true)
+                                    if (idx != -1 && idx < earliestIndex) {
+                                        earliestIndex = idx
+                                    }
+                                }
+                                if (earliestIndex != Int.MAX_VALUE) {
+                                    filteredText = ocrText.substring(earliestIndex)
+                                }
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    UberParser.processUberRideRequest(filteredText, this@MainActivity)
+                                }
                             }
                         }
-                        if (earliestIndex != Int.MAX_VALUE) {
-                            filteredText = ocrText.substring(earliestIndex)
-                        }
-//                        Log.d("MainActivity", "Filtered OCR text (from first ride type onward): $filteredText")
-
-                        // Forward the filtered text to UberParser for further processing
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            UberParser.processUberRideRequest(filteredText, this@MainActivity)
-                        }
+                        // Start (or ensure) the overlay service is running.
+                        startOverlayService()
+                    } else {
+                        Log.e("MainActivity", "MediaProjection token is not valid after delay")
                     }
-                }
-
-                // ------------------------------------------------
-
-                startOverlayService()
+                }, 500) // 500 ms delay
             } ?: run {
                 Log.e("MainActivity", "Screen capture permission granted but result.data is null")
             }
@@ -429,6 +451,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             Log.e("MainActivity", "Screen capture permission denied")
         }
     }
+
 
     private fun selectFileForOCR() {
         filePickerLauncher.launch("image/*")

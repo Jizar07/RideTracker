@@ -204,8 +204,13 @@ class FloatingOverlayService : Service() {
             .setContentText("Displaying ride calculations overlay")
             .setSmallIcon(R.drawable.logo)
             .build()
-        startForeground(NOTIFICATION_ID, notification)
-
+        try {
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: SecurityException) {
+            Log.e("FloatingOverlayService", "SecurityException in startForeground: ${e.message}")
+            stopSelf()
+            return
+        }
         if (!Settings.canDrawOverlays(this)) {
             Log.e("FloatingOverlayService", "Overlay permission not granted. Please enable it in Settings.")
             stopSelf()
@@ -329,7 +334,7 @@ class FloatingOverlayService : Service() {
                 overlayCheckHandler.postDelayed(this, 1000)
             }
         }
-        overlayCheckHandler.postDelayed(overlayCheckRunnable, 1000)
+        overlayCheckHandler.postDelayed(overlayCheckRunnable, 3000)
         // ---------------- END OVERLAY AUTO-HIDE CHECK -----------------
 
         // Capture the original dimensions of the overlay once it has been laid out.
@@ -367,13 +372,16 @@ class FloatingOverlayService : Service() {
     }
 
     override fun onDestroy() {
-        overlayCheckHandler.removeCallbacks(overlayCheckRunnable)
+        if (::overlayCheckHandler.isInitialized) {
+            overlayCheckHandler.removeCallbacks(overlayCheckRunnable)
+        }
         super.onDestroy()
         serviceScope.cancel()
         if (floatingView != null) {
             windowManager.removeView(floatingView)
         }
     }
+
 
 
     override fun onBind(intent: Intent?): IBinder? = null
