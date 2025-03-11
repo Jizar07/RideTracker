@@ -69,8 +69,10 @@ dependencies {
     // Add Google Play Services Location dependency (ensure you sync your project after adding)
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
+    implementation ("org.osmdroid:osmdroid-android:6.1.10")  // osmdroid library for OpenStreetMap
+
     // Google Places SDK dependency providing access to POI search functionality.
-    implementation("com.google.android.libraries.places:places:4.1.0")
+//    implementation("com.google.android.libraries.places:places:4.1.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.9.1")
 

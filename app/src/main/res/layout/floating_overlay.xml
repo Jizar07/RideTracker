@@ -265,7 +265,10 @@
                 android:text=""
                 android:textSize="16sp"
                 android:textColor="#D00606" />
+
         </LinearLayout>
+
+
 
         <!-- Close Button -->
         <Button
@@ -280,7 +283,14 @@
             app:layout_constraintTop_toTopOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
+    <!-- floating_overlay.xml (around line 59) -->
+    <ImageView
+        android:id="@+id/ivOcrPreview"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_margin="8dp"
+        android:adjustViewBounds="true"
+        android:scaleType="fitCenter"
+        android:visibility="gone" />
 
-
-
-</LinearLayout>
+    </LinearLayout>

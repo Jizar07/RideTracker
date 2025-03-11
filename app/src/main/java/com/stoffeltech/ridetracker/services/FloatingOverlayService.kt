@@ -20,6 +20,7 @@ import android.util.Log
 import android.util.TypedValue
 import android.view.*
 import android.widget.Button
+import android.widget.ImageView // <-- Added to reference our OCR preview
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
@@ -54,7 +55,10 @@ class FloatingOverlayService : Service() {
     lateinit var tvRatingLabel: TextView
     lateinit var tvStopsValue: TextView
 
-    // Variables for dragging.
+    // We'll keep an ImageView reference for OCR preview:
+    private lateinit var ivOcrPreview: ImageView
+
+    // Variables for dragging
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
@@ -171,6 +175,13 @@ class FloatingOverlayService : Service() {
         }
 
         /**
+         * Exposed function to update the OCR preview image in the overlay.
+         */
+        fun updateOcrPreview(bitmap: Bitmap?) {
+            instance?.setOcrPreview(bitmap)
+        }
+
+        /**
          * Hides the entire overlay by setting its visibility to GONE.
          */
         fun hideOverlay() {
@@ -178,6 +189,10 @@ class FloatingOverlayService : Service() {
                 instance?.floatingView?.visibility = View.GONE
             }
         }
+
+        /**
+         * Returns a bitmap snapshot of the overlay itself, if needed.
+         */
         fun getOverlayBitmap(): Bitmap? {
             instance?.floatingView?.let { view ->
                 // Create a bitmap with the view's width and height
@@ -190,7 +205,6 @@ class FloatingOverlayService : Service() {
             }
             return null
         }
-
     }
 
     private lateinit var windowManager: WindowManager
@@ -245,6 +259,9 @@ class FloatingOverlayService : Service() {
         tvRatingValue = floatingView!!.findViewById(R.id.tvRatingValue)
         tvRatingLabel = floatingView!!.findViewById(R.id.tvRatingLabel)
         tvStopsValue = floatingView!!.findViewById(R.id.tvStopsValue)
+
+        // Initialize our OCR preview ImageView
+        ivOcrPreview = floatingView!!.findViewById(R.id.ivOcrPreview)
 
         // Set up layout parameters.
         layoutParams = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -319,16 +336,23 @@ class FloatingOverlayService : Service() {
             // stopSelf()
         }
 
+        // Add the view
         windowManager.addView(floatingView, layoutParams)
 
         // ---------------- PERIODIC CHECK FOR VALID REQUEST ----------------
         // This check hides the overlay if no valid ride request is detected.
-        // It uses UberParser.lastValidRequestTime, which should be updated whenever a valid request is processed.
+        // It uses UberParser.lastValidRequestTime and LyftParser.lastValidRequestTime, which should be updated whenever a valid request is processed.
         overlayCheckHandler = Handler(Looper.getMainLooper())
         overlayCheckRunnable = object : Runnable {
             override fun run() {
-                // If no valid request was processed in the last 1 second, hide the overlay.
-                if (System.currentTimeMillis() - UberParser.lastValidRequestTime > 3000) {
+                val lastUberTime = UberParser.lastValidRequestTime
+                val lastLyftTime = com.stoffeltech.ridetracker.lyft.LyftParser.lastValidRequestTime
+                val lastParserTime = maxOf(lastUberTime, lastLyftTime)
+
+                val isDebugMode = false  // Set to true during debugging; set to false in production.
+
+                // Only auto-hide if not in debug mode and if no valid request was processed in the last 3 seconds.
+                if (!isDebugMode && System.currentTimeMillis() - lastParserTime > 6000) {
                     hideOverlay()
                 }
                 overlayCheckHandler.postDelayed(this, 1000)
@@ -336,6 +360,7 @@ class FloatingOverlayService : Service() {
         }
         overlayCheckHandler.postDelayed(overlayCheckRunnable, 3000)
         // ---------------- END OVERLAY AUTO-HIDE CHECK -----------------
+
 
         // Capture the original dimensions of the overlay once it has been laid out.
         floatingView?.post {
@@ -350,6 +375,24 @@ class FloatingOverlayService : Service() {
             origTextSizeTime = tvTimeValue.textSize
             origTextSizeProfitLoss = tvProfitLossValue.textSize
         }
+
+        // Make sure the companion object can access this instance
+        instance = this
+    }
+
+    /**
+     * Internal function that sets or clears the OCR preview image on the overlay.
+     */
+    fun setOcrPreview(bitmap: Bitmap?) {
+        serviceScope.launch(Dispatchers.Main) {
+            if (bitmap != null) {
+                ivOcrPreview.setImageBitmap(bitmap)
+                ivOcrPreview.visibility = View.VISIBLE
+            } else {
+                ivOcrPreview.setImageDrawable(null)
+                ivOcrPreview.visibility = View.GONE
+            }
+        }
     }
 
     private fun updateTextSizes(scale: Float) {
@@ -360,10 +403,6 @@ class FloatingOverlayService : Service() {
         tvMilesValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeMiles * scale)
         tvTimeValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeTime * scale)
         tvProfitLossValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, origTextSizeProfitLoss * scale)
-    }
-
-    private fun runOnUiThread(action: () -> Unit) {
-        Handler(Looper.getMainLooper()).post(action)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -380,9 +419,9 @@ class FloatingOverlayService : Service() {
         if (floatingView != null) {
             windowManager.removeView(floatingView)
         }
+        // Release the OCR resources when the service is destroyed
+        ScreenCaptureService.releaseTextRecognizer()
     }
-
-
 
     override fun onBind(intent: Intent?): IBinder? = null
 

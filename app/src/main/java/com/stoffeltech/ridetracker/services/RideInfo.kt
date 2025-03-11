@@ -16,5 +16,6 @@ data class RideInfo(
     // -------------- NEW FIELDS --------------
     val rideSubtype: String? = null,
     val bonuses: String? = null,
-    val isExclusive: Boolean
+    val isExclusive: Boolean,
+    val riderName: String? = null
 )

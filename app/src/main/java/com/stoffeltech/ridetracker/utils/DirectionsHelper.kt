@@ -1,3 +1,4 @@
+// File: DirectionsHelper.kt
 package com.stoffeltech.ridetracker.utils
 
 import android.util.Log
@@ -11,7 +12,7 @@ import java.io.IOException
 
 object DirectionsHelper {
 
-    // Function to decode the polyline string from the Directions API into a list of LatLng points.
+    // Existing decodePoly function remains unchanged.
     fun decodePoly(encoded: String): List<LatLng> {
         val poly = mutableListOf<LatLng>()
         var index = 0
@@ -45,64 +46,36 @@ object DirectionsHelper {
         return poly
     }
 
-    // Function to fetch directions from the Google Directions API.
-    // This function takes the origin, destination, and your API key as parameters,
-    // then returns a list of LatLng points representing the route.
-    suspend fun fetchDirections(origin: LatLng, destination: LatLng, apiKey: String): List<LatLng>? {
+    // Updated fetchRoute function using OSRM instead of Mapbox.
+    // Replace your current fetchRoute function (starting around line 40) with the following code:
+    // In DirectionsHelper.kt, update your fetchRoute function (e.g., starting at line 40) to:
+
+    // In DirectionsHelper.kt, update the fetchRoute function (e.g., starting around line 40) with the following code:
+    suspend fun fetchRoute(origin: LatLng, destination: LatLng): Route? {
         return withContext(Dispatchers.IO) {
-            // Build the URL for the directions request
-            val url = "https://maps.googleapis.com/maps/api/directions/json?" +
-                    "origin=${origin.latitude},${origin.longitude}" +
-                    "&destination=${destination.latitude},${destination.longitude}" +
-                    "&mode=driving&key=$apiKey"
+            // Build the OSRM API URL using HTTPS
+            val url = "https://router.project-osrm.org/route/v1/driving/" +
+                    "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}" +
+                    "?overview=full&geometries=polyline&steps=true"
+            Log.d("DirectionsHelper", "OSRM Request URL: $url")
             val client = OkHttpClient()
             val request = Request.Builder().url(url).build()
 
             try {
                 val response = client.newCall(request).execute()
+                Log.d("DirectionsHelper", "OSRM response code: ${response.code}")
                 val jsonString = response.body?.string()
-                if (jsonString != null) {
-                    val jsonObj = JSONObject(jsonString)
-                    val routes = jsonObj.getJSONArray("routes")
-                    if (routes.length() > 0) {
-                        val route = routes.getJSONObject(0)
-                        val overviewPolyline = route.getJSONObject("overview_polyline")
-                        val encodedPoints = overviewPolyline.getString("points")
-                        return@withContext decodePoly(encodedPoints)
-                    }
-                }
-                null
-            } catch (e: IOException) {
-                Log.e("DirectionsHelper", "Error fetching directions: ${e.message}")
-                null
-            }
-        }
-    }
-    // New function: fetchRoute returns a Route (polyline + turn-by-turn steps)
-    suspend fun fetchRoute(origin: LatLng, destination: LatLng, apiKey: String): Route? {
-        return withContext(Dispatchers.IO) {
-            // Build the URL for driving directions
-            val url = "https://maps.googleapis.com/maps/api/directions/json?" +
-                    "origin=${origin.latitude},${origin.longitude}" +
-                    "&destination=${destination.latitude},${destination.longitude}" +
-                    "&mode=driving&key=$apiKey"
-            val client = OkHttpClient()
-            val request = Request.Builder().url(url).build()
-            try {
-                val response = client.newCall(request).execute()
-                val jsonString = response.body?.string()
+                Log.d("DirectionsHelper", "OSRM response: $jsonString")
                 if (jsonString != null) {
                     val jsonObj = JSONObject(jsonString)
                     val routes = jsonObj.getJSONArray("routes")
                     if (routes.length() > 0) {
                         val routeObj = routes.getJSONObject(0)
-
-                        // Get the overall polyline for the route
-                        val overviewPolyline = routeObj.getJSONObject("overview_polyline")
-                        val encodedPoints = overviewPolyline.getString("points")
+                        // OSRM returns geometry directly as a polyline string.
+                        val encodedPoints = routeObj.getString("geometry")
                         val polylinePoints = decodePoly(encodedPoints)
 
-                        // Parse step-by-step instructions from the first leg of the route
+                        // Parse step-by-step instructions from the first leg.
                         val legs = routeObj.getJSONArray("legs")
                         val stepsList = mutableListOf<RouteStep>()
                         if (legs.length() > 0) {
@@ -110,17 +83,24 @@ object DirectionsHelper {
                             val steps = leg.getJSONArray("steps")
                             for (i in 0 until steps.length()) {
                                 val stepObj = steps.getJSONObject(i)
-                                val htmlInstruction = stepObj.getString("html_instructions")
-                                // Remove HTML tags from the instruction
-                                val instruction = htmlInstruction.replace(Regex("<.*?>"), "")
-                                val startLocObj = stepObj.getJSONObject("start_location")
-                                val endLocObj = stepObj.getJSONObject("end_location")
-                                val startLocation = LatLng(startLocObj.getDouble("lat"), startLocObj.getDouble("lng"))
-                                val endLocation = LatLng(endLocObj.getDouble("lat"), endLocObj.getDouble("lng"))
-                                stepsList.add(RouteStep(instruction, startLocation, endLocation))
+                                // Retrieve the maneuver JSON object.
+                                val maneuver = stepObj.getJSONObject("maneuver")
+                                // Safely obtain the "instruction" value; default to empty string if missing.
+                                val instruction = if (maneuver.has("instruction")) {
+                                    maneuver.getString("instruction")
+                                } else {
+                                    ""
+                                }
+                                // OSRM returns location as an array: [longitude, latitude]
+                                val locationArray = maneuver.getJSONArray("location")
+                                val startLocation = LatLng(locationArray.getDouble(1), locationArray.getDouble(0))
+                                // Use startLocation as a placeholder for endLocation; adjust if needed.
+                                stepsList.add(RouteStep(instruction, startLocation, startLocation))
                             }
                         }
                         return@withContext Route(polylinePoints, stepsList)
+                    } else {
+                        Log.e("DirectionsHelper", "No routes found in OSRM response.")
                     }
                 }
                 null

@@ -44,12 +44,13 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
-import com.google.android.libraries.places.api.Places
-import com.google.android.libraries.places.api.net.PlacesClient
+//import com.google.android.libraries.places.api.Places
+//import com.google.android.libraries.places.api.net.PlacesClient
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.stoffeltech.ridetracker.future.LoginActivity
 import com.stoffeltech.ridetracker.future.UberApiTest
+import com.stoffeltech.ridetracker.lyft.LyftParser
 import com.stoffeltech.ridetracker.services.FloatingOverlayService
 import com.stoffeltech.ridetracker.services.FloatingOverlayService.Companion.hideOverlay
 import com.stoffeltech.ridetracker.services.ScreenshotService
@@ -110,7 +111,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var mMap: GoogleMap
-    private lateinit var placesClient: PlacesClient
+//    private lateinit var placesClient: PlacesClient
     private lateinit var tvCurrentSpeed: TextView
     private lateinit var ivModeSwitch: ImageView
 
@@ -249,11 +250,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             Toast.makeText(this, "Please grant notification access...", Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-        // Disabled for testing: Accessibility Service check
-         if (!isAccessibilityServiceEnabled(this, com.stoffeltech.ridetracker.services.AccessibilityService::class.java)) {
-             Toast.makeText(this, "Please enable RideTracker Accessibility Service...", Toast.LENGTH_LONG).show()
-             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-         }
+        if (!isAccessibilityServiceEnabled(this, com.stoffeltech.ridetracker.services.AccessibilityService::class.java)) {
+            Toast.makeText(this, "Please enable RideTracker Accessibility Service...", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
 
         if (!com.stoffeltech.ridetracker.utils.hasUsageStatsPermission(this)) {
             Toast.makeText(this, "Please grant usage access permission...", Toast.LENGTH_LONG).show()
@@ -293,10 +293,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mapFragment.getMapAsync(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        if (!Places.isInitialized()) {
-            Places.initialize(applicationContext, BuildConfig.GOOGLE_PLACES_API_KEY)
-        }
-        placesClient = Places.createClient(this)
+//        if (!Places.isInitialized()) {
+//            Places.initialize(applicationContext, BuildConfig.GOOGLE_PLACES_API_KEY)
+//        }
+//        placesClient = Places.createClient(this)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
@@ -345,7 +345,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
-
         mMap = googleMap
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             mMap.isMyLocationEnabled = true
@@ -402,55 +401,63 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     // ---------------------- UPDATED SCREEN CAPTURE LAUNCHER ----------------------
 // This callback delays the MediaProjection start until after the FloatingOverlayService is running.
     private val screenCaptureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            result.data?.let { data ->
-                // Delay MediaProjection start by 500 ms to ensure FloatingOverlayService has already started.
-                Handler(Looper.getMainLooper()).postDelayed({
-                    // Start (or update) MediaProjection using your centralized manager.
-                    MediaProjectionLifecycleManager.startMediaProjection(this, result.resultCode, data)
-                    Log.d("MainActivity", "MediaProjection set successfully after delay")
+    if (result.resultCode == Activity.RESULT_OK) {
+        result.data?.let { data ->
+            // Delay MediaProjection start by 500 ms to ensure FloatingOverlayService is running.
+            Handler(Looper.getMainLooper()).postDelayed({
+                MediaProjectionLifecycleManager.startMediaProjection(this, result.resultCode, data)
+                Log.d("MainActivity", "MediaProjection set successfully after delay")
 
-                    // Now check that we have a valid MediaProjection token.
-                    val mediaProjection = MediaProjectionLifecycleManager.getMediaProjection()
-                    if (mediaProjection != null) {
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            // Optionally delay a little more if needed
-                            delay(500)
-                            ScreenCaptureService.continuouslyCaptureAndSendOcr(
-                                this@MainActivity,
-                                mediaProjection
-                            ) { ocrText ->
-                                // Process OCR text as before.
-                                val rideTypes = UberParser.getRideTypes()
-                                var filteredText = ocrText
-                                var earliestIndex = Int.MAX_VALUE
-                                for (ride in rideTypes) {
-                                    val idx = ocrText.indexOf(ride, ignoreCase = true)
-                                    if (idx != -1 && idx < earliestIndex) {
-                                        earliestIndex = idx
-                                    }
+                val mediaProjection = MediaProjectionLifecycleManager.getMediaProjection()
+                if (mediaProjection != null) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        delay(500)
+                        ScreenCaptureService.continuouslyCaptureAndSendOcr(
+                            this@MainActivity,
+                            mediaProjection
+                        ) { ocrText ->
+                            // Use Uber's OCR logic as a template and add Lyft processing.
+                            // Identify the earliest occurrence of Uber or Lyft keywords.
+                            val uberTypes = UberParser.getRideTypes()  // Uber ride types list
+                            val lyftKeyword = "Lyft" // Basic keyword for Lyft
+                            var uberIndex = Int.MAX_VALUE
+                            // Find earliest occurrence of any Uber keyword.
+                            for (ride in uberTypes) {
+                                val idx = ocrText.indexOf(ride, ignoreCase = true)
+                                if (idx != -1 && idx < uberIndex) {
+                                    uberIndex = idx
                                 }
-                                if (earliestIndex != Int.MAX_VALUE) {
-                                    filteredText = ocrText.substring(earliestIndex)
+                            }
+                            // Find index of the Lyft keyword.
+                            val lyftIndex = ocrText.indexOf(lyftKeyword, ignoreCase = true)
+                            var filteredText = ocrText
+                            // Dispatch based on which keyword appears first.
+                            if (lyftIndex != -1 && lyftIndex < uberIndex) {
+                                filteredText = ocrText.substring(lyftIndex)
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    com.stoffeltech.ridetracker.lyft.LyftParser.processLyftRideRequest(filteredText, this@MainActivity)
                                 }
+                            } else if (uberIndex != Int.MAX_VALUE) {
+                                filteredText = ocrText.substring(uberIndex)
                                 lifecycleScope.launch(Dispatchers.IO) {
                                     UberParser.processUberRideRequest(filteredText, this@MainActivity)
                                 }
                             }
                         }
-                        // Start (or ensure) the overlay service is running.
-                        startOverlayService()
-                    } else {
-                        Log.e("MainActivity", "MediaProjection token is not valid after delay")
                     }
-                }, 500) // 500 ms delay
-            } ?: run {
-                Log.e("MainActivity", "Screen capture permission granted but result.data is null")
-            }
-        } else {
-            Log.e("MainActivity", "Screen capture permission denied")
+                    startOverlayService()
+                } else {
+                    Log.e("MainActivity", "MediaProjection token is not valid after delay")
+                }
+            }, 500)
+        } ?: run {
+            Log.e("MainActivity", "Screen capture permission granted but result.data is null")
         }
+    } else {
+        Log.e("MainActivity", "Screen capture permission denied")
     }
+}
+
 
 
     private fun selectFileForOCR() {
@@ -550,9 +557,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                             var navigationPolyline: com.google.android.gms.maps.model.Polyline? = null
                             var instructionIndex = 0
                             btnMapToHotspot.setOnClickListener {
-                                val apiKey = BuildConfig.GOOGLE_PLACES_API_KEY
+                                // Updated for OSRM: remove access token reference and call fetchRoute without token.
                                 lifecycleScope.launch {
-                                    val route = DirectionsHelper.fetchRoute(currentLatLng, hotspotLatLng, apiKey)
+                                    // Call fetchRoute using OSRM API (no token required)
+                                    val route = DirectionsHelper.fetchRoute(currentLatLng, hotspotLatLng)
                                     if (route != null) {
                                         runOnUiThread {
                                             navigationPolyline?.remove()

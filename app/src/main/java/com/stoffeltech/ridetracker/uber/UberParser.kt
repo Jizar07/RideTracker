@@ -3,6 +3,7 @@ package com.stoffeltech.ridetracker.uber
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
@@ -21,16 +22,10 @@ private var lastDeliveryRequestHash: Int? = null
 // New fingerprint variable for Uber ride requests to avoid duplicates.
 private var lastUberRequestFingerprint: String? = null
 
-
-
 object UberParser {
     // ---------------- LAST VALID REQUEST TIMESTAMP -----------------
-// This variable is updated each time a valid ride request is processed.
-// It is later used by the overlay to determine whether to hide itself.
     var lastValidRequestTime: Long = 0
 
-    // Note: The longer alternatives are placed first so that, for example,
-    // "UberX Priority" is matched before "UberX".
     private val rideTypes = listOf(
         "UberX Priority",
         "UberX Reserve",
@@ -54,15 +49,20 @@ object UberParser {
         Regex(rideTypes.joinToString(separator = "|"), RegexOption.IGNORE_CASE)
     }
 
-    // ---------------- NORMALIZE OCR TEXT FUNCTION ----------------
-    // This function manually scans the OCR text and replaces any occurrence
-    // of 'l' or 'L' (misinterpreted instead of '1') that immediately follows a digit.
+    /**
+     * Original function for minimal 'l' => '1' checks (we keep it as is).
+     */
     private fun normalizeOcrText(text: String): String {
         val sb = StringBuilder()
         for (i in text.indices) {
             val c = text[i]
-            // If the current character is 'l' or 'L' and the previous character is a digit, replace it with '1'
-            if ((c == 'l' || c == 'L') && i > 0 && text[i - 1].isDigit()) {
+            if ((c == 'l' || c == 'L') &&
+                i < text.lastIndex && text[i + 1].isDigit()
+            ) {
+                sb.append('1')
+            } else if ((c == 'l' || c == 'L') &&
+                i > 0 && text[i - 1].isDigit()
+            ) {
                 sb.append('1')
             } else {
                 sb.append(c)
@@ -71,17 +71,39 @@ object UberParser {
         return sb.toString()
     }
 
+    // Helper function to bring Uber Driver app to the foreground.
+    private fun bringUberAppToForeground(context: Context) {
+        // Retrieve the launch intent for the Uber Driver package.
+        val packageManager = context.packageManager
+        val intent = packageManager.getLaunchIntentForPackage("com.ubercab.driver")
+        if (intent != null) {
+            // Add flag to start a new task so it works from non-Activity context.
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)  // Launches the app.
+        } else {
+            Log.e("UberParser", "Uber Driver app not found on device.")
+        }
+    }
+
+
+    /**
+     * Replaces all 'l'/'L' with '1' except if the entire substring is exactly "total".
+     */
+    private fun replaceLsInField(fieldValue: String?): String {
+        if (fieldValue == null) return ""
+        if (fieldValue.equals("total", ignoreCase = true)) {
+            return fieldValue // skip replacing in "total"
+        }
+        return fieldValue.replace(Regex("[lL]"), "1")
+    }
+
     fun extractRideRequestText(fullText: String): String {
         val match = rideTypeRegex.find(fullText)
         return if (match != null) fullText.substring(match.range.first) else fullText
     }
 
-    // ------------------------------------------------------------------------
-    //  A) Text Preprocessing Routines
-    // ------------------------------------------------------------------------
     private fun preprocessAccessibilityText(text: String): String {
         var result = text
-        // List of ride types we expect
         val rideTypes = listOf(
             "UberX Priority", "UberX Reserve", "Uber Black XL", "Uber Connect XL",
             "Uber Green", "Green Comfort", "Uber Black", "UberX", "UberXL",
@@ -140,7 +162,7 @@ object UberParser {
         val sb = StringBuilder()
 
         // 1) Ride Type
-        sb.appendLine("1) Ride Type: ${rideInfo.rideType ?: "Unknown"}")
+        sb.appendLine("1) Ride Type: ${rideInfo.rideType ?: "Undetected"}")
 
         // 2) Subtype (Exclusive)
         if (!rideInfo.rideSubtype.isNullOrBlank()) {
@@ -192,27 +214,17 @@ object UberParser {
         // Debug example:
         // Log.d("UberRideRequest", sb.toString())
     }
+
     fun getRideTypes(): List<String> = rideTypes
 
-    // ------------------------------------------------------------------------
-    //  C) The parse(...) function, now capturing rideSubtype & bonuses
-    // ------------------------------------------------------------------------
+    // ---------------- FOCUSED CHANGE: REPLACE L in fare/time/distance STRINGS ----------------
     fun parse(cleanedText: String): RideInfo? {
-        // First, normalize the OCR text to correct misinterpretations (e.g., 'l' misread instead of '1')
+        // Basic normalizing
         val normalizedInput = normalizeOcrText(cleanedText)
-
-        // Log the normalized OCR text
-//        Log.d("UberParser", "Normalized OCR text in parse(): $normalizedInput")
-
-        // Then, preprocess the normalized text as usual
         val text = normalizeOcrText(cleanedText)
 
-        // Log the preprocessed text for further clarity
-//        Log.d("UberParser", "Preprocessed text in parse(): $text")
-
-        // --- Extract Ride Type ---
         val rideTypeMatch = rideTypeRegex.find(text)
-        var rideType = rideTypeMatch?.value ?: "Unknown"
+        var rideType = rideTypeMatch?.value ?: "Undetected"
 
         /* Checks if the ride type contains "Exclusive" (case-insensitive).
          * We'll store it in rideSubtype, but also remove it from the main rideType text
@@ -222,7 +234,7 @@ object UberParser {
         val isExclusive = text.contains("Exclusive", ignoreCase = true)
         // If found, remove the word "Exclusive" from the rideType string.
         if (isExclusive) {
-            rideType = rideType.replace("Exclusive", "", ignoreCase = true).trim()
+            rideType = rideType.replace(Regex("Exclusive\\s*", RegexOption.IGNORE_CASE), "").trim()
         }
 
 
@@ -239,11 +251,12 @@ object UberParser {
         // --- Extract Fare ---
         val fareRegex = Regex("\\$(\\d+)[.,](\\d{2})")
         val fareMatch = fareRegex.find(text)
-        val fare = fareMatch?.let {
-            val wholePart = it.groupValues[1]
-            val decimalPart = it.groupValues[2]
-            "$wholePart.$decimalPart".toDoubleOrNull()
-        }
+        // Replace L in those groups except if equals "total"
+        val rawFareWhole = replaceLsInField(fareMatch?.groupValues?.get(1))
+        val rawFareDecimal = replaceLsInField(fareMatch?.groupValues?.get(2))
+        val fare = if (rawFareWhole.isNotBlank() && rawFareDecimal.isNotBlank()) {
+            (rawFareWhole + "." + rawFareDecimal).toDoubleOrNull()
+        } else null
 
         // -------------------- ROBUST RATING EXTRACTION ---------------------
         // Matches ratings with optional star and "Verified" suffix.
@@ -270,31 +283,41 @@ object UberParser {
         // --- If the request is for Delivery, use a delivery-specific extraction ---
         if (rideType.contains("Delivery", ignoreCase = true)) {
             // Use a regex to extract total time/distance using the "total" keyword.
-            val totalPattern = Regex("(\\d+)\\s*min[s]?\\s*\\((\\d+(?:\\.\\d+)?)\\s*mi\\)\\s*total", RegexOption.IGNORE_CASE)
+            val totalPattern = Regex("([lL\\d]+)\\s*min[s]?\\s*\\(([lL\\d]+(?:\\.[lL\\d]+)?)\\s*mi\\)\\s*total", RegexOption.IGNORE_CASE)
             val totalMatch = totalPattern.find(text)
-            pickupTime = totalMatch?.groupValues?.get(1)?.toDoubleOrNull()
-            pickupDistance = totalMatch?.groupValues?.get(2)?.toDoubleOrNull()
-            // Delivery requests don't have separate trip info.
+
+            // Replace L in these fields except if exactly "total"
+            val rawPickupTime = replaceLsInField(totalMatch?.groupValues?.get(1))
+            val rawPickupDistance = replaceLsInField(totalMatch?.groupValues?.get(2))
+
+            pickupTime = rawPickupTime.toDoubleOrNull()
+            pickupDistance = rawPickupDistance.toDoubleOrNull()
             tripTime = null
             tripDistance = null
-            // Extract delivery location from text following "total" and before Accept/Match.
+
             val addressPattern = Regex("total\\s*(.*?)\\s*(Accept|Match)", RegexOption.IGNORE_CASE)
             pickupLocation = addressPattern.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
             dropoffLocation = pickupLocation
         } else {
             // --- For Ride requests, use the ride-specific extraction ---
-            val pickupInfoRegex = Regex("(\\d+)\\s*mins?\\s*\\((\\d+(?:\\.\\d+)?)\\s*mi\\)\\s*away", RegexOption.IGNORE_CASE)
+            val pickupInfoRegex = Regex("([lL\\d]+)\\s*mins?\\s*\\(([lL\\d]+(?:\\.[lL\\d]+)?)\\s*mi\\)\\s*away", RegexOption.IGNORE_CASE)
             val pickupMatch = pickupInfoRegex.find(text)
-            pickupTime = pickupMatch?.groupValues?.get(1)?.toDoubleOrNull()
-            pickupDistance = pickupMatch?.groupValues?.get(2)?.toDoubleOrNull()
+
+            val rawPickupTime = replaceLsInField(pickupMatch?.groupValues?.get(1))
+            val rawPickupDistance = replaceLsInField(pickupMatch?.groupValues?.get(2))
+            pickupTime = rawPickupTime.toDoubleOrNull()
+            pickupDistance = rawPickupDistance.toDoubleOrNull()
 
             val pickupLocationRegex = Regex("away\\s*([^\\d]+?)\\s*\\d+\\s*mins", RegexOption.IGNORE_CASE)
             pickupLocation = pickupLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
 
-            val tripInfoRegex = Regex("(\\d+)\\s*mins?\\s*\\((\\d+(?:\\.\\d+)?)\\s*mi\\)\\s*trip", RegexOption.IGNORE_CASE)
+            val tripInfoRegex = Regex("([lL\\d]+)\\s*mins?\\s*\\(([lL\\d]+(?:\\.[lL\\d]+)?)\\s*mi\\)\\s*trip", RegexOption.IGNORE_CASE)
             val tripMatch = tripInfoRegex.find(text)
-            tripTime = tripMatch?.groupValues?.get(1)?.toDoubleOrNull()
-            tripDistance = tripMatch?.groupValues?.get(2)?.toDoubleOrNull()
+
+            val rawTripTime = replaceLsInField(tripMatch?.groupValues?.get(1))
+            val rawTripDistance = replaceLsInField(tripMatch?.groupValues?.get(2))
+            tripTime = rawTripTime.toDoubleOrNull()
+            tripDistance = rawTripDistance.toDoubleOrNull()
 
             val dropoffLocationRegex = Regex("trip\\s*(.*?)\\s*(Accept|Match)", RegexOption.IGNORE_CASE)
             dropoffLocation = dropoffLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
@@ -328,7 +351,6 @@ object UberParser {
             tripLocation = dropoffLocation,
             stops = stops,
             actionButton = actionButton,
-            // Pass the flag – true if "Exclusive" was found, false otherwise.
             isExclusive = isExclusive,
             bonuses = bonuses
         )
@@ -381,7 +403,7 @@ object UberParser {
         if (rideInfo == null) {
             Log.d("UberParser", "Parsed ride info is null. Hiding overlay. Raw text: $preparedText")
 
-            FloatingOverlayService.hideOverlay()
+//            FloatingOverlayService.hideOverlay()
             return
         }
 
@@ -427,6 +449,9 @@ object UberParser {
         }
         lastUberRequestFingerprint = fingerprint
 
+        // Bring Uber Driver app to the foreground when a new ride request is processed.
+        bringUberAppToForeground(context)
+
         // --- Compute colors for each metric (new additions) ---
         // Compute fare color
         val computedFareColor = when {
@@ -462,18 +487,18 @@ object UberParser {
 
         // --- Update the overlay using the computed colors ---
         FloatingOverlayService.updateOverlay(
-            rideType = rideInfo.rideType ?: "Unknown",
-            isExclusive = rideInfo.isExclusive, // Pass rideSubtype flag as needed
+            rideType = rideInfo.rideType ?: "Undetected",
+            isExclusive = rideInfo.isExclusive,
             fare = "$${String.format("%.2f", adjustedFare)}",
             fareColor = computedFareColor,
             pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
-            pMileColor = computedPMileColor,  // Use computed price-per-mile color
+            pMileColor = computedPMileColor,
             pHour = "$${String.format("%.2f", if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0)}",
-            pHourColor = computedPHourColor,  // Use computed price-per-hour color
+            pHourColor = computedPHourColor,
             miles = String.format("%.1f", totalMiles),
             minutes = String.format("%.1f", totalMinutes),
             profit = "$${String.format("%.2f", profit)}",
-            profitColor = computedProfitColor, // Use computed profit color
+            profitColor = computedProfitColor,
             rating = rideInfo.rating?.toString() ?: "N/A",
             stops = rideInfo.stops ?: ""
         )
@@ -526,7 +551,7 @@ object UberParser {
         // are all provided to the overlay, so that the user sees the ride type along with the time and distance.
         FloatingOverlayService.updateOverlay(
             rideType = rideInfo.rideType ?: "Unknown",
-            isExclusive = rideInfo.isExclusive, // Pass rideSubtype here.
+            isExclusive = rideInfo.isExclusive,
             fare = "$${String.format("%.2f", adjustedFare)}",
             fareColor = fareColor,
             pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
@@ -543,7 +568,7 @@ object UberParser {
         // Schedule the overlay to hide after 15 seconds.
         Handler(Looper.getMainLooper()).postDelayed({
             FloatingOverlayService.hideOverlay()
-        }, 15000)
+        }, 6000)
     }
 
     /**

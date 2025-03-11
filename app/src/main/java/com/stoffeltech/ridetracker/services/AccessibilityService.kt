@@ -2,11 +2,13 @@ package com.stoffeltech.ridetracker.services
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.stoffeltech.ridetracker.lyft.LyftParser
 import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager
 import com.stoffeltech.ridetracker.services.ScreenCaptureService.continuouslyCaptureAndSendOcr
 import com.stoffeltech.ridetracker.uber.UberParser
@@ -86,6 +88,15 @@ class AccessibilityService : AccessibilityService() {
                         UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
                     }
                 }
+            } else {
+                if (packageName.contains("com.lyft.android.driver", ignoreCase = true)) {
+                    serviceScope.launch {
+                        Log.d("AccessibilityService", "Valid Lyft Ride Request: $detectedText")
+                        com.stoffeltech.ridetracker.lyft.LyftParser.processLyftRideRequest(detectedText, this@AccessibilityService)
+                    }
+                } else {
+
+                }
             }
         }
     }
@@ -134,20 +145,20 @@ class AccessibilityService : AccessibilityService() {
         }
     }
 
+    @SuppressLint("SuspiciousIndentation")
     override fun onServiceConnected() {
-        super.onServiceConnected()
-        // -------------------- CONFIGURE ACCESSIBILITY SERVICE --------------------
-        val info = serviceInfo
-        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
-                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
-        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-        info.notificationTimeout = 100
-        // Force detect ALL UI elements, including pop-ups & system dialogs.
-        info.flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-        serviceInfo = info
+    super.onServiceConnected()
+    val info = AccessibilityServiceInfo()
+    // Listen for window content changes, state changes, and clicks
+    info.eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                      AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                      AccessibilityEvent.TYPE_VIEW_CLICKED
+    info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+    // Set packageNames to null to capture events from all apps (including Lyft)
+    info.packageNames = null
+    info.notificationTimeout = 100
+    serviceInfo = info
+
 
 //        // TEMPORARY DEBUG: Simulate a ride request after 3 seconds.
 //        serviceScope.launch {
@@ -156,6 +167,17 @@ class AccessibilityService : AccessibilityService() {
 //            Log.d("AccessibilityServiceDebug", "Simulating ride request: $testRideText")
 //            UberParser.processUberRideRequest(testRideText, this@AccessibilityService)
 //        }
+        // ----- BEGIN: Debug Simulation for Lyft Ride Request -----
+//        serviceScope.launch {
+//            delay(10000)  // Delay to allow the overlay service to be ready.
+//            // Use the same test text that you see in your logs for Lyft:
+//            val testLyftText = "DismissRide Finder\$9.16\$21.98/hr est. rate for this rideMap image with pickup and drop-off route7 min - 2.8 miDa Vinci & Fontana, Lehigh Acres18 min - 8.8 miHomestead & Shady, Lehigh AcresRide within driving rangeJerryVerified5.0Request match"
+//            Log.d("AccessibilityServiceDebug", "Simulating Lyft ride request: $testLyftText")
+//            // Call the LyftParser processing function:
+//            LyftParser.processLyftRideRequest(testLyftText, this@AccessibilityService)
+//        }
+        // ----- END: Debug Simulation for Lyft Ride Request -----
+
     }
 
     override fun onInterrupt() {

@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="quantum_googgreenA400">#00E676</color> <!-- Added missing Google green A400 color -->
+    <color name="quantum_lightblueA400">#00B0FF</color> <!-- Added missing light blue A400 color -->
+
 </resources>
