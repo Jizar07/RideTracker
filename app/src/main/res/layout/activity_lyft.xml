@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Updated Lyft Settings Layout: White background, all texts black, with separators -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:background="@android:color/white">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@android:color/white">
+
+        <!-- Title for Lyft Settings -->
+        <TextView
+            android:id="@+id/tvLyftTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Lyft Settings"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable per mile price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable per mile:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftAcceptMile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="1.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftAcceptMileDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter a value that represents an acceptable per-mile price."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Declinable per mile price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Declinable per mile:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftDeclineMile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="0.75"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftDeclineMileDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the per-mile price threshold at which a Lyft ride is considered declinable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable per hour price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable per hour:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftAcceptHour"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="25.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftAcceptHourDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter a value representing an acceptable per-hour price."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Declinable per hour price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Declinable per hour:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftDeclineHour"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="20.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftDeclineHourDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the per-hour price threshold at which a Lyft ride is considered declinable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Declinable Fare (Low) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Declinable Fare:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftFareLow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="5.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftFareLowDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the fare amount at which a Lyft ride is considered a sure decline."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable Fare (High) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable Fare:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftFareHigh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="10.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftFareHighDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the fare amount at which a Lyft ride is considered acceptable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable Rating -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable Rating:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftAcceptRating"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="4.70"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftAcceptRatingDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the minimum rating for Lyft rides to be considered acceptable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Bonus Ride -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Bonus Ride:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etLyftBonusRide"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="0.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvLyftBonusRideDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the bonus ride value applicable for Lyft."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Save Lyft Settings Button -->
+        <Button
+            android:id="@+id/btnLyftSaveSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save Lyft Settings"
+            android:textColor="@android:color/black"
+            android:background="@android:color/white" />
+
+    </LinearLayout>
+</ScrollView>

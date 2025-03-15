@@ -4,7 +4,13 @@ import java.io.FileInputStream
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    id("com.google.gms.google-services")
 
+}
+buildscript {
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.2")
+    }
 }
 
 android {
@@ -79,7 +85,13 @@ dependencies {
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
 
-    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+//    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+
+    // ----- Add Firebase Cloud-based ML Kit OCR dependency -----
+//    implementation("com.google.mlkit:vision-text-recognition-cloud:16.0.0-beta3")
+    // ----- ML Kit Text Recognition v2 (Unified API) -----
+    implementation("com.google.mlkit:text-recognition:16.0.0")
+
     implementation("com.google.mlkit:camera:16.0.0-beta3")
 
 
@@ -94,6 +106,10 @@ dependencies {
     // Optionally, if you want Retrofit later:
      implementation("com.squareup.retrofit2:retrofit:2.9.0")
      implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+
+    implementation ("com.squareup.okhttp3:logging-interceptor:4.9.1")
+
+    implementation ("androidx.cardview:cardview:1.0.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

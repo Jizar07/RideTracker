@@ -252,6 +252,17 @@
             android:padding="8dp"
             android:layout_above="@id/aiOutputContainer">
 
+            <!--- activity_main.xml - Insert a button for history -->
+            <Button
+                android:id="@+id/btnRequestHistory"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="View History"
+                android:textColor="@android:color/white"
+                android:background="#000000"
+                android:layout_margin="8dp"
+                android:padding="8dp" />
+
             <!-- Screenshot Switch Box -->
             <LinearLayout
                 android:layout_width="wrap_content"

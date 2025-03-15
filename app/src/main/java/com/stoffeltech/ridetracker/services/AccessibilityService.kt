@@ -12,6 +12,7 @@ import com.stoffeltech.ridetracker.lyft.LyftParser
 import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager
 import com.stoffeltech.ridetracker.services.ScreenCaptureService.continuouslyCaptureAndSendOcr
 import com.stoffeltech.ridetracker.uber.UberParser
+import com.stoffeltech.ridetracker.utils.FileLogger
 import com.stoffeltech.ridetracker.utils.RevenueTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.Date
 
 /**
  * AccessibilityService implementation that provides basic permissions and text extraction.
@@ -39,6 +43,8 @@ class AccessibilityService : AccessibilityService() {
     companion object {
         // Stores the last extracted daily earnings value from the Uber screen.
         private var lastExtractedDailyEarnings: Double = 0.0
+        // Stores the date (formatted as "yyyyMMdd") of the last extraction.
+        private var lastExtractionDate: String = ""
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -51,7 +57,7 @@ class AccessibilityService : AccessibilityService() {
             val detectedText = extractTextFromNode(event.source).ifBlank { event.text.joinToString(" ") }
 
             // --- ADDED LOG: Print the extracted text for debugging ---
-            Log.d("AccessibilityService", "Extracted text from event: $detectedText")
+//            FileLogger.log("AccessibilityService", "Extracted text from event: $detectedText")
 
             // ---------------- SPECIFIC EARNINGS EXTRACTION -----------------
             // Look for the specific earnings string following "TODAY"
@@ -64,11 +70,22 @@ class AccessibilityService : AccessibilityService() {
                 val earningsStr = earningsMatch.groupValues[1]
                 val currentDailyEarnings = earningsStr.toDoubleOrNull() ?: 0.0
                 // Log the extracted earnings value.
-                Log.d("AccessibilityService", "Extracted daily earnings from 'TODAY': $$currentDailyEarnings")
-                // If the new earnings value is greater than the last extracted, update RevenueTracker.
+                FileLogger.log("AccessibilityService", "Extracted daily earnings from 'TODAY': $$currentDailyEarnings")
+
+                // ----- NEW: Check for new day by comparing formatted dates -----
+                // Get today's date as a string formatted as "yyyyMMdd"
+                val currentDate = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
+                // If the current date is different from the last extraction date, reset the last extracted earnings.
+                if (currentDate != lastExtractionDate) {
+                    FileLogger.log("AccessibilityService", "New day detected. Resetting last extracted earnings.")
+                    lastExtractedDailyEarnings = 0.0
+                    lastExtractionDate = currentDate
+                }
+
+                // Only update if the new earnings value is higher than the last recorded value.
                 if (currentDailyEarnings > lastExtractedDailyEarnings) {
                     val delta = currentDailyEarnings - lastExtractedDailyEarnings
-                    Log.d("AccessibilityService", "New earnings detected. Delta: $$delta")
+                    FileLogger.log("AccessibilityService", "New earnings detected. Delta: $$delta")
                     RevenueTracker.addRevenue(applicationContext, delta)
                     lastExtractedDailyEarnings = currentDailyEarnings
                 }
@@ -80,10 +97,10 @@ class AccessibilityService : AccessibilityService() {
                 serviceScope.launch {
                     // -------------------- NORMAL ACCESSIBILITY PROCESSING --------------------
                     if (UberParser.isValidRideRequest(detectedText)) {
-                        Log.d("AccessibilityService", "✔ Valid Uber Ride Request: $detectedText")
+                        FileLogger.log("AccessibilityService", "✔ Valid Uber Ride Request: $detectedText")
                         UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
                     } else {
-//                        Log.e("AccessibilityService", "❌ Could not extract valid text from Uber overlay.")
+//                        FileLogger.log("AccessibilityService", "❌ Could not extract valid text from Uber overlay.")
                         // Forward the extracted text (even if not valid) to UberParser for further decision-making.
                         UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
                     }
@@ -91,7 +108,7 @@ class AccessibilityService : AccessibilityService() {
             } else {
                 if (packageName.contains("com.lyft.android.driver", ignoreCase = true)) {
                     serviceScope.launch {
-                        Log.d("AccessibilityService", "Valid Lyft Ride Request: $detectedText")
+                        FileLogger.log("AccessibilityService", "Valid Lyft Ride Request: $detectedText")
                         com.stoffeltech.ridetracker.lyft.LyftParser.processLyftRideRequest(detectedText, this@AccessibilityService)
                     }
                 } else {
@@ -137,10 +154,10 @@ class AccessibilityService : AccessibilityService() {
         // Only return result if it qualifies as a valid ride request;
         // otherwise return an empty string.
         return if (UberParser.isValidRideRequest(result)) {
-//            Log.d("AccessibilityService", "Extracted overlay text (valid): $result")
+//            FileLogger.log("AccessibilityService", "Extracted overlay text (valid): $result")
             result
         } else {
-//            Log.d("AccessibilityService", "Extracted overlay text is not a valid ride request.")
+//            FileLogger.log("AccessibilityService", "Extracted overlay text is not a valid ride request.")
             ""
         }
     }
@@ -164,7 +181,7 @@ class AccessibilityService : AccessibilityService() {
 //        serviceScope.launch {
 //            delay(3000)
 //            val testRideText = "Delivery (2)Exclusive\$5.07Includes expected tip39 min (12.1 mi) totalDairon's Cuban Pizzeria FoodtruckCalumet St & Lancelot Ave, Lehigh AcresAccept"
-//            Log.d("AccessibilityServiceDebug", "Simulating ride request: $testRideText")
+//            FileLogger.log("AccessibilityServiceDebug", "Simulating ride request: $testRideText")
 //            UberParser.processUberRideRequest(testRideText, this@AccessibilityService)
 //        }
         // ----- BEGIN: Debug Simulation for Lyft Ride Request -----
@@ -172,7 +189,7 @@ class AccessibilityService : AccessibilityService() {
 //            delay(10000)  // Delay to allow the overlay service to be ready.
 //            // Use the same test text that you see in your logs for Lyft:
 //            val testLyftText = "DismissRide Finder\$9.16\$21.98/hr est. rate for this rideMap image with pickup and drop-off route7 min - 2.8 miDa Vinci & Fontana, Lehigh Acres18 min - 8.8 miHomestead & Shady, Lehigh AcresRide within driving rangeJerryVerified5.0Request match"
-//            Log.d("AccessibilityServiceDebug", "Simulating Lyft ride request: $testLyftText")
+//            FileLogger.log("AccessibilityServiceDebug", "Simulating Lyft ride request: $testLyftText")
 //            // Call the LyftParser processing function:
 //            LyftParser.processLyftRideRequest(testLyftText, this@AccessibilityService)
 //        }
@@ -182,6 +199,6 @@ class AccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         // Handle service interruption if necessary.
-//        Log.w("AccessibilityService", "Accessibility Service Interrupted")
+//        FileLogger.log("AccessibilityService", "Accessibility Service Interrupted")
     }
 }

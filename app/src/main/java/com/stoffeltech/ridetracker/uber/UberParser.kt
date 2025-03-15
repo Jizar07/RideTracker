@@ -12,7 +12,20 @@ import androidx.preference.PreferenceManager
 import com.stoffeltech.ridetracker.SettingsActivity
 import com.stoffeltech.ridetracker.services.FloatingOverlayService
 import com.stoffeltech.ridetracker.services.RideInfo
+import com.stoffeltech.ridetracker.utils.FileLogger
 import kotlin.math.abs
+
+// Define Uber-specific keys internally.
+object UberKeys {
+    const val KEY_ACCEPT_MILE = "pref_accept_mile"       // default: 1.0
+    const val KEY_DECLINE_MILE = "pref_decline_mile"       // default: 0.75
+    const val KEY_ACCEPT_HOUR = "pref_accept_hour"         // default: 25.0
+    const val KEY_DECLINE_HOUR = "pref_decline_hour"         // default: 20.0
+    const val KEY_FARE_LOW = "pref_fare_low"               // default: 5.0
+    const val KEY_FARE_HIGH = "pref_fare_high"             // default: 10.0
+    const val KEY_BONUS_RIDE = "pref_bonus_ride"
+    const val KEY_RATING_THRESHOLD = "pref_rating_threshold" // default: 4.70
+}
 
 // Uber-specific duplicate tracking variables
 private var lastDeliveryRawFare: Double? = null
@@ -21,6 +34,17 @@ private var lastDeliveryRequestHash: Int? = null
 
 // New fingerprint variable for Uber ride requests to avoid duplicates.
 private var lastUberRequestFingerprint: String? = null
+private var lastFingerprintTime: Long = 0
+private var lastUberFingerprintTime: Long = 0
+
+// ----- ADD DUPLICATE INVALID REQUEST TRACKING -----
+private var lastInvalidRequestFingerprint: Int? = null
+private var lastInvalidRequestTime: Long = 0
+// ----- Global throttle for invalid ride request logs -----
+private var lastGlobalInvalidRequestTime: Long = 0
+
+
+
 
 object UberParser {
     // ---------------- LAST VALID REQUEST TIMESTAMP -----------------
@@ -81,7 +105,7 @@ object UberParser {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)  // Launches the app.
         } else {
-            Log.e("UberParser", "Uber Driver app not found on device.")
+            FileLogger.log("UberParser", "Uber Driver app not found on device.")
         }
     }
 
@@ -94,7 +118,13 @@ object UberParser {
         if (fieldValue.equals("total", ignoreCase = true)) {
             return fieldValue // skip replacing in "total"
         }
-        return fieldValue.replace(Regex("[lL]"), "1")
+        var result = fieldValue
+        // Check if the value ends with ".l" or ".L" and replace it with ".1"
+        if (result.matches(Regex(".*\\.[lL]$"))) {
+            result = result.replace(Regex("(?<=\\.)[lL]$"), "1")
+        }
+        // Then, replace any remaining occurrences of 'l' or 'L' with "1"
+        return result.replace(Regex("[lL]"), "1")
     }
 
     fun extractRideRequestText(fullText: String): String {
@@ -102,6 +132,9 @@ object UberParser {
         return if (match != null) fullText.substring(match.range.first) else fullText
     }
 
+    /**
+     * Preprocess text from accessibility events (Android <= 13).
+     */
     private fun preprocessAccessibilityText(text: String): String {
         var result = text
         val rideTypes = listOf(
@@ -127,6 +160,9 @@ object UberParser {
         return result.trim()
     }
 
+    /**
+     * Preprocess text from OCR (Android 14+).
+     */
     private fun prepareOcrTextForParsing(ocrText: String): String {
         var text = ocrText
 
@@ -212,16 +248,22 @@ object UberParser {
         sb.appendLine("11) Action Button: $actionButton")
 
         // Debug example:
-        // Log.d("UberRideRequest", sb.toString())
+        // FileLogger.log("UberRideRequest", sb.toString())
     }
 
     fun getRideTypes(): List<String> = rideTypes
 
     // ---------------- FOCUSED CHANGE: REPLACE L in fare/time/distance STRINGS ----------------
     fun parse(cleanedText: String): RideInfo? {
+        // Create a list to collect anomaly messages
+        val anomalyMessages = mutableListOf<String>()  // ----- ANOMALY: Collect messages -----
+
         // Basic normalizing
         val normalizedInput = normalizeOcrText(cleanedText)
         val text = normalizeOcrText(cleanedText)
+
+//        var rideType = "Undetected"
+        var rideSubtype: String? = null
 
         val rideTypeMatch = rideTypeRegex.find(text)
         var rideType = rideTypeMatch?.value ?: "Undetected"
@@ -249,14 +291,39 @@ object UberParser {
         }
 
         // --- Extract Fare ---
-        val fareRegex = Regex("\\$(\\d+)[.,](\\d{2})")
+        // Updated regex to allow optional decimal part (e.g., "$1748" or "$17.48").
+        val fareRegex = Regex("\\$(\\d+)(?:[.,](\\d{2}))?")
+
         val fareMatch = fareRegex.find(text)
+
         // Replace L in those groups except if equals "total"
-        val rawFareWhole = replaceLsInField(fareMatch?.groupValues?.get(1))
-        val rawFareDecimal = replaceLsInField(fareMatch?.groupValues?.get(2))
-        val fare = if (rawFareWhole.isNotBlank() && rawFareDecimal.isNotBlank()) {
-            (rawFareWhole + "." + rawFareDecimal).toDoubleOrNull()
-        } else null
+        var rawFareWhole = replaceLsInField(fareMatch?.groupValues?.get(1))
+        var rawFareDecimal = replaceLsInField(fareMatch?.groupValues?.getOrNull(2))
+
+        // If the optional decimal is null or blank, rawFareDecimal won't be used.
+        var fare: Double? = null
+
+        if (!rawFareWhole.isNullOrBlank()) {
+            if (!rawFareDecimal.isNullOrBlank()) {
+                // We have something like "$1748.99"
+                fare = (rawFareWhole + "." + rawFareDecimal).toDoubleOrNull()
+            } else {
+                // We have something like "$1748" (missing decimal).
+                // Optionally, correct if it looks like 1748 -> 17.48
+                if (rawFareWhole.length > 2) {
+                    // e.g. "1748" => "17.48"
+                    val correctedWhole = rawFareWhole.dropLast(2)
+                    val correctedDecimal = rawFareWhole.takeLast(2)
+                    anomalyMessages.add("Correcting missing decimal: $$rawFareWhole => \$$correctedWhole.$correctedDecimal") // ----- ANOMALY: Correction logged once -----
+                    rawFareWhole = correctedWhole
+                    rawFareDecimal = correctedDecimal
+                    fare = (rawFareWhole + "." + rawFareDecimal).toDoubleOrNull()
+                } else {
+                    // If it's too short to correct, treat it as is.
+                    fare = rawFareWhole.toDoubleOrNull()
+                }
+            }
+        }
 
         // -------------------- ROBUST RATING EXTRACTION ---------------------
         // Matches ratings with optional star and "Verified" suffix.
@@ -292,6 +359,16 @@ object UberParser {
 
             pickupTime = rawPickupTime.toDoubleOrNull()
             pickupDistance = rawPickupDistance.toDoubleOrNull()
+
+            // ----- ANOMALY DETECTION for Delivery Time & Distance -----
+            if (pickupTime != null && pickupTime >= 60) {
+                anomalyMessages.add("Unrealistic delivery pickupTime: $pickupTime min. Adjusting by dividing by 10.") // ----- ANOMALY: Delivery PickupTime -----
+                pickupTime = pickupTime / 10.0
+            }
+            if (pickupDistance != null && pickupDistance >= 20) {
+                anomalyMessages.add("Unrealistic delivery pickupDistance: $pickupDistance mi. Adjusting by dividing by 10.") // ----- ANOMALY: Delivery PickupDistance -----
+                pickupDistance = pickupDistance / 10.0
+            }
             tripTime = null
             tripDistance = null
 
@@ -308,16 +385,37 @@ object UberParser {
             pickupTime = rawPickupTime.toDoubleOrNull()
             pickupDistance = rawPickupDistance.toDoubleOrNull()
 
+            // ----- ANOMALY DETECTION for Pickup Time & Distance -----
+            if (pickupTime != null && pickupTime >= 60) {
+                anomalyMessages.add("Unrealistic pickupTime detected: $pickupTime min. Adjusting by dividing by 10.") // ----- ANOMALY: PickupTime -----
+                pickupTime = pickupTime / 10.0
+            }
+            if (pickupDistance != null && pickupDistance >= 20) {
+                anomalyMessages.add("Unrealistic pickupDistance detected: $pickupDistance mi. Adjusting by dividing by 10.") // ----- ANOMALY: PickupDistance -----
+                pickupDistance = pickupDistance / 10.0
+            }
+
             val pickupLocationRegex = Regex("away\\s*([^\\d]+?)\\s*\\d+\\s*mins", RegexOption.IGNORE_CASE)
             pickupLocation = pickupLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
 
             val tripInfoRegex = Regex("([lL\\d]+)\\s*mins?\\s*\\(([lL\\d]+(?:\\.[lL\\d]+)?)\\s*mi\\)\\s*trip", RegexOption.IGNORE_CASE)
             val tripMatch = tripInfoRegex.find(text)
-
             val rawTripTime = replaceLsInField(tripMatch?.groupValues?.get(1))
             val rawTripDistance = replaceLsInField(tripMatch?.groupValues?.get(2))
             tripTime = rawTripTime.toDoubleOrNull()
             tripDistance = rawTripDistance.toDoubleOrNull()
+
+            // ----- ANOMALY DETECTION for Trip Time & Distance using average speed -----
+            // Compute the average speed in miles per minute.
+            if (tripTime != null && tripDistance != null && tripTime > 0) {
+                val speed = tripDistance / tripTime
+                // For typical rides, an average speed of 0.5 to 1.5 mi/min (30-90 mph) is realistic.
+                // If the computed speed is way too high (say > 2.5 mi/min), assume a misread decimal and adjust.
+                if (speed > 2) {
+                    anomalyMessages.add("Unrealistic trip speed detected: $speed mi/min (tripDistance: $tripDistance, tripTime: $tripTime). Adjusting tripDistance by dividing by 10.") // ----- ANOMALY: TripSpeed -----
+                    tripDistance = tripDistance / 10.0
+                }
+            }
 
             val dropoffLocationRegex = Regex("trip\\s*(.*?)\\s*(Accept|Match)", RegexOption.IGNORE_CASE)
             dropoffLocation = dropoffLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
@@ -331,12 +429,33 @@ object UberParser {
         val stops = if (text.contains("Multiple stops", ignoreCase = true)) "Multiple stops" else ""
         // Extra info is available if needed: "Verified: $verified, Exclusive: $exclusive"
 
-        // --- Validation: Ensure required fields are present ---
-        // For non-Delivery requests, we expect a pickupTime, fare, and tripTime at minimum.
+        // ----- Updated Validation Block in parse() -----
         if (fare == null || pickupTime == null ||
             (!rideType.contains("Delivery", ignoreCase = true) && tripTime == null)
         ) {
+            val missingFields = mutableListOf<String>()
+            if (fare == null) missingFields.add("fare")
+            if (pickupTime == null) missingFields.add("pickupTime")
+            if (!rideType.contains("Delivery", ignoreCase = true) && tripTime == null) missingFields.add("tripTime")
+
+            // Build the error message including missing fields, the raw text, and any anomaly messages
+            val errorMsg = "Invalid ride request. Missing fields: ${missingFields.joinToString(", ")}. Raw text: $text. " +
+                    if (anomalyMessages.isNotEmpty()) "Anomalies: ${anomalyMessages.joinToString("; ")}" else ""
+
+            val currentTime = System.currentTimeMillis()
+            // Throttle logging: if an invalid log has been produced within the last 30 seconds, skip logging.
+            if (currentTime - lastGlobalInvalidRequestTime < 30000) {
+                return null
+            }
+            lastGlobalInvalidRequestTime = currentTime
+            FileLogger.log("UberParser", errorMsg)
             return null
+        }
+
+
+        // If anomalies were detected in a valid ride, log them once.
+        if (anomalyMessages.isNotEmpty()) {
+            FileLogger.log("UberParser", "Ride request anomalies: " + anomalyMessages.joinToString("; "))
         }
 
         return RideInfo(
@@ -359,60 +478,51 @@ object UberParser {
     /**
      * Processes an Uber ride request.
      *
-     * This function takes the raw accessibility text, validates it,
-     * extracts and parses the ride information, and then branches to handle
-     * either a Delivery or a Ride based on the ride type.
-     *
-     * Blocks are clearly separated below:
-     *
-     * Block 1: Validate input text format.
-     * Block 2: Extract the candidate ride request block.
-     * Block 3: Parse the ride information.
-     * Block 4: Validate extracted ride fields.
-     * Block 5: Check for duplicate ride requests.
-     * Block 6A: For Delivery requests, delegate to processDeliveryRequest.
-     * Block 6B: For Ride requests, log details, calculate metrics, and update the overlay.
-     *
-     * @param rawText The raw text extracted from accessibility events.
-     * @param serviceContext The AccessibilityService context (for preferences and logging).
+     * Blocks:
+     * 1) Validate and pre-process raw text.
+     * 2) Parse ride information.
+     * 3) Avoid duplicate requests.
+     * 4) Load thresholds exclusively from Uber preferences (except cost-to-drive from main settings).
+     * 5) Compute metrics and update the overlay.
      */
     @SuppressLint("DefaultLocale")
     suspend fun processUberRideRequest(rawText: String, context: Context) {
         // Normalize and trim the raw OCR text
         val trimmedText = normalizeOcrText(rawText.trim())
-//        Log.d("UberParser", "Normalized text in processUberRideRequest: $trimmedText")
+//        FileLogger.log("UberParser", "Normalized text in processUberRideRequest: $trimmedText")
 
-        // Early return if text does not contain required keywords
+        // Early return if text does not contain required keywords.
+        // ----- ADDED LOG: Log even if the required keywords are missing -----
         if (!trimmedText.contains("Accept", ignoreCase = true) && !trimmedText.contains("Match", ignoreCase = true)) {
+            FileLogger.log("UberParser", "Request rejected: missing Accept/Match keywords. Raw text: $trimmedText")
             return
         }
 
         // Choose the proper preprocessor based on OS version (if needed)
         val preparedText = if (android.os.Build.VERSION.SDK_INT < 34) {
-            Log.d("UberParser", "Using ACC processing (Android <= 13)")
+//            FileLogger.log("UberParser", "Using ACC processing (Android <= 13)")
             preprocessAccessibilityText(trimmedText)
         } else {
-            Log.d("UberParser", "Using OCR processing (Android 14+)")
+//            FileLogger.log("UberParser", "Using OCR processing (Android 14+)")
             prepareOcrTextForParsing(trimmedText)
         }
 
-//        Log.d("UberParser", "Prepared text for parsing: $preparedText")
+//        FileLogger.log("UberParser", "Prepared text for parsing: $preparedText")
 
         // Parse the prepared text to extract ride information
         val rideInfo = parse(preparedText)
         if (rideInfo == null) {
-            Log.d("UberParser", "Parsed ride info is null. Hiding overlay. Raw text: $preparedText")
-
-//            FloatingOverlayService.hideOverlay()
+            FileLogger.log("UberParser", "Parsed ride info is null. Raw text: $preparedText")
             return
         }
+
 
         // ---------------- UPDATE LAST VALID REQUEST TIME -----------------
         // We update the timestamp to the current time every time a valid ride request is received.
         lastValidRequestTime = System.currentTimeMillis()
 
         // --- Insert the debug log here ---
-        Log.d("UberParser", """
+        FileLogger.log("UberParser", """
         Parsed RideInfo:
         rideType = ${rideInfo.rideType},
         fare = ${rideInfo.fare},
@@ -438,16 +548,49 @@ object UberParser {
         val tripTimeVal = rideInfo.tripTime ?: 0.0
         val totalMinutes = pickupTimeVal + tripTimeVal
 
-        // Retrieve SharedPreferences using the new context parameter
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val bonus = prefs.getFloat(SettingsActivity.KEY_BONUS_RIDE, 0.0f).toDouble()
-        val adjustedFare = fareVal + bonus
-        val fingerprint = "$adjustedFare-$totalMiles-$totalMinutes"
+        // Load Uber-specific thresholds from "uber_prefs".
+        val uberPrefs = context.getSharedPreferences("uber_prefs", Context.MODE_PRIVATE)
+        // For cost to drive, keep reading from main settings.
+        val mainPrefs = PreferenceManager.getDefaultSharedPreferences(context)
 
-        if (fingerprint == lastUberRequestFingerprint) {
+        val bonus = uberPrefs.getFloat(UberKeys.KEY_BONUS_RIDE, 0.0f).toDouble()
+        val fareLow = uberPrefs.getFloat(UberKeys.KEY_FARE_LOW, 5.0f)
+        val fareHigh = uberPrefs.getFloat(UberKeys.KEY_FARE_HIGH, 10.0f)
+        val acceptMile = uberPrefs.getFloat(UberKeys.KEY_ACCEPT_MILE, 1.0f)
+        val declineMile = uberPrefs.getFloat(UberKeys.KEY_DECLINE_MILE, 0.75f)
+        val acceptHour = uberPrefs.getFloat(UberKeys.KEY_ACCEPT_HOUR, 25.0f)
+        val declineHour = uberPrefs.getFloat(UberKeys.KEY_DECLINE_HOUR, 20.0f)
+        val ratingThreshold = uberPrefs.getFloat(UberKeys.KEY_RATING_THRESHOLD, 4.70f)
+
+        // Adjust fare with bonus.
+        var adjustedFare = fareVal + bonus
+
+        // Anomaly Detection: Check if the computed price per mile is unrealistically high.
+        // If totalMiles > 0, calculate price per mile. If price per mile exceeds $50, assume OCR misinterpreted the decimal point.
+        if (totalMiles > 0) {
+            val pricePerMile = adjustedFare / totalMiles
+            if (pricePerMile > 10) {
+                FileLogger.log("UberParser", "Unrealistic fare detected: $$adjustedFare for $totalMiles miles (price per mile: $$pricePerMile). Adjusting fare by dividing by 100.")
+                adjustedFare /= 100.0
+            }
+        }
+
+        val fingerprint = "$adjustedFare-$totalMiles-$totalMinutes"
+        val currentTime = System.currentTimeMillis()
+
+        // If same fingerprint arrives within 30 seconds, skip
+        if (fingerprint == lastUberRequestFingerprint &&
+            (currentTime - lastUberFingerprintTime) < 30_000
+        ) {
+            FileLogger.log("UberParser", "Skipping duplicate Uber request: $fingerprint")
             return
         }
+
+        // Update the stored fingerprint + time
         lastUberRequestFingerprint = fingerprint
+        lastUberFingerprintTime = currentTime
+
+        com.stoffeltech.ridetracker.services.HistoryManager.addRideRequest(rideInfo, context)
 
         // Bring Uber Driver app to the foreground when a new ride request is processed.
         bringUberAppToForeground(context)
@@ -455,37 +598,34 @@ object UberParser {
         // --- Compute colors for each metric (new additions) ---
         // Compute fare color
         val computedFareColor = when {
-            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> Color.RED
-            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> Color.YELLOW
+            adjustedFare < fareLow -> Color.RED
+            adjustedFare < fareHigh -> Color.YELLOW
             else -> Color.GREEN
         }
 
         // Compute price per mile and its color
         val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
         val computedPMileColor = when {
-            pricePerMile < prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f) -> Color.RED
-            pricePerMile < prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f) -> Color.YELLOW
+            pricePerMile < declineMile -> Color.RED
+            pricePerMile < acceptMile -> Color.YELLOW
             else -> Color.GREEN
         }
 
         // Compute price per hour and its color
         val pricePerHour = if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0
         val computedPHourColor = when {
-            pricePerHour < prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f) -> Color.RED
-            pricePerHour < prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f) -> Color.YELLOW
+            pricePerHour < declineHour -> Color.RED
+            pricePerHour < acceptHour -> Color.YELLOW
             else -> Color.GREEN
         }
+        val currentRating = rideInfo.rating?.toFloat() ?: 0f
+        val computedRatingColor = if (currentRating >= ratingThreshold) Color.GREEN else Color.RED
 
-        // Compute profit and its color
-        val drivingCost = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles
+        val drivingCost = mainPrefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles
         val profit = adjustedFare - drivingCost
         val computedProfitColor = if (profit >= 0) Color.GREEN else Color.RED
 
-        // Compute rating color
-        val currentRating = rideInfo.rating?.toFloat() ?: 0f
-        val computedRatingColor = if (currentRating >= prefs.getFloat(SettingsActivity.KEY_RATING_THRESHOLD, 4.70f)) Color.GREEN else Color.RED
-
-        // --- Update the overlay using the computed colors ---
+        // Update overlay.
         FloatingOverlayService.updateOverlay(
             rideType = rideInfo.rideType ?: "Undetected",
             isExclusive = rideInfo.isExclusive,
@@ -500,76 +640,86 @@ object UberParser {
             profit = "$${String.format("%.2f", profit)}",
             profitColor = computedProfitColor,
             rating = rideInfo.rating?.toString() ?: "N/A",
+            ratingColor = computedRatingColor,
             stops = rideInfo.stops ?: ""
         )
+        Handler(Looper.getMainLooper()).postDelayed({
+            FloatingOverlayService.hideOverlay()
+        }, 6000)
     }
 
 
     /**
      * Processes Delivery requests separately.
-     *
-     * This function updates the overlay with basic Delivery details.
-     *
-     * @param rideInfo The parsed ride information.
-     * @param bonus The bonus amount from user preferences.
-     * @param prefs User preferences.
+     * Loads Uber thresholds from "uber_prefs" and keeps cost-to-drive from main settings.
      */
     @SuppressLint("DefaultLocale")
-    private fun processDeliveryRequest(rideInfo: RideInfo, bonus: Double, prefs: android.content.SharedPreferences) {
+    private fun processDeliveryRequest(rideInfo: RideInfo, bonus: Double, prefsFromUber: android.content.SharedPreferences, mainPrefs: android.content.SharedPreferences) {
         val adjustedFare = rideInfo.fare?.plus(bonus) ?: 0.0
         // For deliveries, we use pickupTime and pickupDistance as total values.
-        val totalMinutes = rideInfo.pickupTime ?: 0.0
-        val totalMiles = rideInfo.pickupDistance ?: 0.0
+        var totalMinutes = rideInfo.pickupTime ?: 0.0
+        var totalMiles = rideInfo.pickupDistance ?: 0.0
+
+        // ----- ANOMALY DETECTION for Delivery Pickup Time & Distance -----
+        if (totalMinutes >= 60) {
+            FileLogger.log("UberParser", "Unrealistic delivery pickupTime: $totalMinutes min. Adjusting by dividing by 10.")
+            totalMinutes /= 10.0
+        }
+        if (totalMiles >= 20) {
+            FileLogger.log("UberParser", "Unrealistic delivery pickupDistance: $totalMiles mi. Adjusting by dividing by 10.")
+            totalMiles /= 10.0
+        }
 
         // Calculate per-mile and per-hour metrics.
         val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
         val pricePerHour = if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0
 
-        // Calculate profit based on a driving cost per mile.
-        val drivingCost = prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles
+        val drivingCost = mainPrefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles
         val profit = adjustedFare - drivingCost
 
         // Determine colors based on thresholds from user preferences.
         val pmileColor = when {
-            pricePerMile < prefs.getFloat(SettingsActivity.KEY_DECLINE_MILE, 0.75f) -> Color.RED
-            pricePerMile < prefs.getFloat(SettingsActivity.KEY_ACCEPT_MILE, 1.0f) -> Color.YELLOW
+            pricePerMile < prefsFromUber.getFloat(UberKeys.KEY_DECLINE_MILE, 0.75f) -> Color.RED
+            pricePerMile < prefsFromUber.getFloat(UberKeys.KEY_ACCEPT_MILE, 1.0f) -> Color.YELLOW
             else -> Color.GREEN
         }
         val phourColor = when {
-            pricePerHour < prefs.getFloat(SettingsActivity.KEY_DECLINE_HOUR, 20.0f) -> Color.RED
-            pricePerHour < prefs.getFloat(SettingsActivity.KEY_ACCEPT_HOUR, 25.0f) -> Color.YELLOW
+            pricePerHour < prefsFromUber.getFloat(UberKeys.KEY_DECLINE_HOUR, 20.0f) -> Color.RED
+            pricePerHour < prefsFromUber.getFloat(UberKeys.KEY_ACCEPT_HOUR, 25.0f) -> Color.YELLOW
             else -> Color.GREEN
         }
         val fareColor = when {
-            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_LOW, 5.0f) -> Color.RED
-            adjustedFare < prefs.getFloat(SettingsActivity.KEY_FARE_HIGH, 10.0f) -> Color.YELLOW
+            adjustedFare < prefsFromUber.getFloat(UberKeys.KEY_FARE_LOW, 5.0f) -> Color.RED
+            adjustedFare < prefsFromUber.getFloat(UberKeys.KEY_FARE_HIGH, 10.0f) -> Color.YELLOW
             else -> Color.GREEN
         }
         val profitColor = if (profit >= 0) Color.GREEN else Color.RED
 
-        // Now update the overlay. Here, rideType, total minutes (time), and total miles (distance)
-        // are all provided to the overlay, so that the user sees the ride type along with the time and distance.
-        FloatingOverlayService.updateOverlay(
-            rideType = rideInfo.rideType ?: "Unknown",
-            isExclusive = rideInfo.isExclusive,
-            fare = "$${String.format("%.2f", adjustedFare)}",
-            fareColor = fareColor,
-            pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
-            pMileColor = pmileColor,
-            pHour = "$${String.format("%.2f", if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0)}",
-            pHourColor = phourColor,
-            miles = String.format("%.1f", totalMiles),
-            minutes = String.format("%.1f", totalMinutes),
-            profit = "$${String.format("%.2f", adjustedFare - (prefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.20f) * totalMiles))}",
-            profitColor = profitColor,
-            rating = rideInfo.rating?.toString() ?: "N/A",
-            stops = rideInfo.stops ?: ""
-        )
-        // Schedule the overlay to hide after 15 seconds.
-        Handler(Looper.getMainLooper()).postDelayed({
-            FloatingOverlayService.hideOverlay()
-        }, 6000)
-    }
+    // For deliveries, rating isn't applicable; pass a default color.
+    val defaultRatingColor = Color.GRAY
+
+    FloatingOverlayService.updateOverlay(
+        rideType = rideInfo.rideType ?: "Unknown",
+        isExclusive = rideInfo.isExclusive,
+        fare = "$${String.format("%.2f", adjustedFare)}",
+        fareColor = fareColor,
+        pMile = "$${String.format("%.2f", if (totalMiles > 0) adjustedFare / totalMiles else 0.0)}",
+        pMileColor = pmileColor,
+        pHour = "$${String.format("%.2f", if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0)}",
+        pHourColor = phourColor,
+        miles = String.format("%.1f", totalMiles),
+        minutes = String.format("%.1f", totalMinutes),
+        profit = "$${String.format("%.2f", profit)}",
+        profitColor = profitColor,
+        rating = rideInfo.rating?.toString() ?: "N/A",
+        ratingColor = defaultRatingColor,  // Added parameter for rating color.
+        stops = rideInfo.stops ?: ""
+    )
+    Handler(Looper.getMainLooper()).postDelayed({
+        FloatingOverlayService.hideOverlay()
+    }, 6000)
+}
+
 
     /**
      * Determines if text likely represents a valid Uber ride request

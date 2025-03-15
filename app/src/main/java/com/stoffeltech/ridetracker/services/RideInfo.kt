@@ -17,5 +17,6 @@ data class RideInfo(
     val rideSubtype: String? = null,
     val bonuses: String? = null,
     val isExclusive: Boolean,
-    val riderName: String? = null
+    val riderName: String? = null,
+    val timestamp: Long = System.currentTimeMillis()
 )

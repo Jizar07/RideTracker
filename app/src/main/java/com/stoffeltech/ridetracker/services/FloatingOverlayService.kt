@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import com.stoffeltech.ridetracker.services.ScreenshotService
 import com.stoffeltech.ridetracker.uber.UberParser
+import com.stoffeltech.ridetracker.utils.FileLogger
 
 class FloatingOverlayService : Service() {
 
@@ -115,64 +116,55 @@ class FloatingOverlayService : Service() {
          */
         @SuppressLint("SetTextI18n")
         fun updateOverlay(
-            rideType: String,
-            isExclusive: Boolean,
-            fare: String, fareColor: Int,
-            pMile: String, pMileColor: Int,
-            pHour: String, pHourColor: Int,
-            miles: String,
-            minutes: String,
-            profit: String, profitColor: Int,
-            rating: String,
-            stops: String
-        ){
-            instance?.serviceScope?.launch {
-                instance?.floatingView?.visibility = View.VISIBLE
-                // Update ride type text and set color based on ride subtype.
-                instance?.tvRideTypeValue?.text = rideType
-                if (isExclusive) {
-                    // If the ride is exclusive, set the color to blue.
-                    instance?.tvRideTypeValue?.setTextColor(Color.parseColor("#088DA5"))
-                } else {
-                    // Otherwise, set the ride type color to white.
-                    instance?.tvRideTypeValue?.setTextColor(Color.WHITE)
-                }
-                instance?.tvFareValue?.text = fare
-                instance?.tvFareValue?.setTextColor(fareColor)
-                instance?.tvPMileValue?.text = pMile
-                instance?.tvPMileValue?.setTextColor(pMileColor)
-                instance?.tvPHourValue?.text = pHour
-                instance?.tvPHourValue?.setTextColor(pHourColor)
-                instance?.tvMilesValue?.text = miles
-                instance?.tvTimeValue?.text = minutes
-                instance?.tvProfitLossValue?.text = profit
-                instance?.tvProfitLossValue?.setTextColor(profitColor)
-
-                // Combined Rating/Stops update:
-                Log.d("OverlayUpdate", "rating: $rating, stops: $stops")
-                instance?.tvRatingLabel?.text = "Rating"
-                instance?.tvRatingLabel?.setTextColor(Color.WHITE)
-                instance?.tvRatingValue?.text = rating
-                val prefs = PreferenceManager.getDefaultSharedPreferences(instance!!)
-                val ratingThreshold = prefs.getFloat(com.stoffeltech.ridetracker.SettingsActivity.KEY_RATING_THRESHOLD, 4.70f)
-                val currentRating = rating.toFloatOrNull() ?: 0f
-                if (currentRating >= ratingThreshold) {
-                    instance?.tvRatingValue?.setTextColor(Color.GREEN)
-                } else {
-                    instance?.tvRatingValue?.setTextColor(Color.RED)
-                }
-                if (stops.isNotEmpty()) {
-                    // Set the new stops TextView with stops info
-                    instance?.tvStopsValue?.text = stops
-                } else {
-                    instance?.tvStopsValue?.text = ""
-                }
-                // Trigger a full-screen screenshot including the floating overlay
-                instance?.let { service ->
-                    ScreenshotService.captureFullScreen(service, rideType)
-                }
-            }
+    rideType: String,
+    isExclusive: Boolean,
+    fare: String, fareColor: Int,
+    pMile: String, pMileColor: Int,
+    pHour: String, pHourColor: Int,
+    miles: String,
+    minutes: String,
+    profit: String, profitColor: Int,
+    rating: String,
+    ratingColor: Int,  // New parameter
+    stops: String
+) {
+    instance?.serviceScope?.launch {
+        instance?.floatingView?.visibility = View.VISIBLE
+        // Update ride type text.
+        instance?.tvRideTypeValue?.text = rideType
+        if (isExclusive) {
+            instance?.tvRideTypeValue?.setTextColor(Color.parseColor("#088DA5"))
+        } else {
+            instance?.tvRideTypeValue?.setTextColor(Color.WHITE)
         }
+        instance?.tvFareValue?.text = fare
+        instance?.tvFareValue?.setTextColor(fareColor)
+        instance?.tvPMileValue?.text = pMile
+        instance?.tvPMileValue?.setTextColor(pMileColor)
+        instance?.tvPHourValue?.text = pHour
+        instance?.tvPHourValue?.setTextColor(pHourColor)
+        instance?.tvMilesValue?.text = miles
+        instance?.tvTimeValue?.text = minutes
+        instance?.tvProfitLossValue?.text = profit
+        instance?.tvProfitLossValue?.setTextColor(profitColor)
+
+        // For rating, use the passed rating color.
+        instance?.tvRatingLabel?.text = "Rating"
+        instance?.tvRatingLabel?.setTextColor(Color.WHITE)
+        instance?.tvRatingValue?.text = rating
+        instance?.tvRatingValue?.setTextColor(ratingColor)
+        if (stops.isNotEmpty()) {
+            instance?.tvStopsValue?.text = stops
+        } else {
+            instance?.tvStopsValue?.text = ""
+        }
+        // Trigger a full-screen screenshot including the floating overlay.
+        instance?.let { service ->
+            ScreenshotService.captureFullScreen(service, rideType)
+        }
+    }
+}
+
 
         /**
          * Exposed function to update the OCR preview image in the overlay.
@@ -221,12 +213,12 @@ class FloatingOverlayService : Service() {
         try {
             startForeground(NOTIFICATION_ID, notification)
         } catch (e: SecurityException) {
-            Log.e("FloatingOverlayService", "SecurityException in startForeground: ${e.message}")
+            FileLogger.log("FloatingOverlayService", "SecurityException in startForeground: ${e.message}")
             stopSelf()
             return
         }
         if (!Settings.canDrawOverlays(this)) {
-            Log.e("FloatingOverlayService", "Overlay permission not granted. Please enable it in Settings.")
+            FileLogger.log("FloatingOverlayService", "Overlay permission not granted. Please enable it in Settings.")
             stopSelf()
             return
         }
@@ -352,7 +344,7 @@ class FloatingOverlayService : Service() {
                 val isDebugMode = false  // Set to true during debugging; set to false in production.
 
                 // Only auto-hide if not in debug mode and if no valid request was processed in the last 3 seconds.
-                if (!isDebugMode && System.currentTimeMillis() - lastParserTime > 6000) {
+                if (!isDebugMode && System.currentTimeMillis() - lastParserTime > 10000) {
                     hideOverlay()
                 }
                 overlayCheckHandler.postDelayed(this, 1000)

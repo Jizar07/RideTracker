@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/itemRequestHistoryCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardCornerRadius="8dp"
+    app:cardUseCompatPadding="true"
+    android:clipToOutline="true"
+    app:cardElevation="4dp">
+
+    <!-- The main container for your item layout -->
+    <LinearLayout
+        android:id="@+id/itemRequestHistory"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#303030"
+        android:fitsSystemWindows="true"
+        android:padding="8dp"
+        android:layout_marginBottom="8dp"
+        android:layout_marginTop="4dp">
+
+        <!-- Row 1: RideType (left) + Timestamp (right) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <!-- Ride Type -->
+            <TextView
+                android:id="@+id/tvRideType"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="UberX"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"/>
+
+            <!-- Timestamp -->
+            <TextView
+                android:id="@+id/tvTimestamp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="03/13/2025 01:11 PM"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"/>
+        </LinearLayout>
+
+        <!-- Divider line below row 1 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="6dp"
+            android:background="@android:color/darker_gray" />
+
+        <!-- Row 2: Fare (left) | Rating (center) | Profit (right) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="2dp">
+
+            <!-- Left column: Fare -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="start">
+
+                <TextView
+                    android:id="@+id/tvPriceLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Fare: "
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/tvPrice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="$16.25"
+                    android:textColor="@android:color/holo_green_light"
+                    android:textSize="13sp"/>
+            </LinearLayout>
+
+            <!-- Middle column: Rating (star + numeric) in the center -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvRatingLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="★"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/tvRating"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="4.90"
+                    android:textColor="@android:color/holo_green_light"
+                    android:textSize="13sp"
+                    android:layout_marginStart="4dp" />
+
+                <!-- Verified suffix, if needed -->
+                <TextView
+                    android:id="@+id/tvRatingVerified"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="(Verified)"
+                    android:textColor="@android:color/holo_blue_light"
+                    android:textSize="13sp"
+                    android:layout_marginStart="4dp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- Right column: Profit -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="end">
+
+                <TextView
+                    android:id="@+id/tvProfitLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Profit: "
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/tvProfitLoss"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="$9.12"
+                    android:textColor="@android:color/holo_red_light"
+                    android:textSize="13sp"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Divider line below row 2 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="6dp"
+            android:background="@android:color/darker_gray" />
+
+        <!-- Row 3: Distance (left) | Time (right) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/tvDistance"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Total Distance: 9.3 mi"
+                android:textColor="@android:color/white"
+                android:textSize="13sp"/>
+
+            <TextView
+                android:id="@+id/tvTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Total Time: 25.0 min"
+                android:textColor="@android:color/white"
+                android:textSize="13sp"/>
+        </LinearLayout>
+        <!-- Divider line below row 2 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="6dp"
+            android:background="@android:color/darker_gray" />
+
+        <!-- Row 4: Price per Mile (left) | Price per Hour (right) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/tvPricePerMileLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Price per Mile: "
+                android:textColor="@android:color/white"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvPricePerMile"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="$1.25"
+                android:textColor="@android:color/white"
+                android:textSize="15sp"/>
+
+            <TextView
+                android:id="@+id/tvPricePerHourLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Price per Hour: "
+                android:textColor="@android:color/white"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvPricePerHour"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$25.00"
+                android:textColor="@android:color/white"
+                android:textSize="15sp"/>
+        </LinearLayout>
+        <!-- Divider line below row 2 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="6dp"
+            android:background="@android:color/darker_gray" />
+
+        <!-- Pickup info on one line -->
+        <TextView
+            android:id="@+id/tvPickupInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Pickup: 5 min, 1.2 mi away"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:layout_marginTop="2dp"/>
+
+        <!-- Pickup location on a new line -->
+        <TextView
+            android:id="@+id/tvPickupLocation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="[Pickup Location Here]"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:layout_marginBottom="2dp"/>
+
+        <!-- Divider line below row 2 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="6dp"
+            android:background="@android:color/darker_gray" />
+        <!-- Dropoff info on one line -->
+        <TextView
+            android:id="@+id/tvDropoffInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Dropoff: 20 min, 8.1 mi trip"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:layout_marginTop="2dp"/>
+
+        <!-- Dropoff location on a new line -->
+        <TextView
+            android:id="@+id/tvDropoffLocation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="[Dropoff Location Here]"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:layout_marginBottom="2dp"/>
+
+        <!-- Divider line below row 2 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="6dp"
+            android:background="@android:color/darker_gray" />
+        <!-- Extras: bonus, stops, etc. -->
+        <TextView
+            android:id="@+id/tvExtras"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Bonus: 2.00, Stops: Multiple"
+            android:textColor="@android:color/darker_gray"
+            android:textSize="12sp"
+            android:layout_marginTop="2dp"/>
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

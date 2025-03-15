@@ -48,12 +48,9 @@ import com.google.android.gms.maps.model.MapStyleOptions
 //import com.google.android.libraries.places.api.net.PlacesClient
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.stoffeltech.ridetracker.future.LoginActivity
-import com.stoffeltech.ridetracker.future.UberApiTest
-import com.stoffeltech.ridetracker.lyft.LyftParser
+import com.stoffeltech.ridetracker.uber.UberActivity
 import com.stoffeltech.ridetracker.services.FloatingOverlayService
 import com.stoffeltech.ridetracker.services.FloatingOverlayService.Companion.hideOverlay
-import com.stoffeltech.ridetracker.services.ScreenshotService
 //import com.stoffeltech.ridetracker.services.ScreenCaptureService
 import com.stoffeltech.ridetracker.services.clusterPlaces
 import com.stoffeltech.ridetracker.services.fetchNearbyPOIs
@@ -62,14 +59,14 @@ import com.stoffeltech.ridetracker.utils.DistanceTracker
 import com.stoffeltech.ridetracker.utils.RevenueTracker
 import com.stoffeltech.ridetracker.utils.TimeTracker
 import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager // NEW: centralized MP manager
-import com.stoffeltech.ridetracker.services.AccessibilityService
+import com.stoffeltech.ridetracker.services.HistoryManager
 import com.stoffeltech.ridetracker.services.ScreenCaptureService
+import com.stoffeltech.ridetracker.uber.UberApiTest
 import com.stoffeltech.ridetracker.uber.UberParser
-import com.stoffeltech.ridetracker.utils.LogHelper
+import com.stoffeltech.ridetracker.utils.FileLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 fun isNotificationAccessEnabled(context: Context): Boolean {
@@ -87,6 +84,7 @@ fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean 
 class RideTrackerApplication : android.app.Application() {
     override fun onCreate() {
         super.onCreate()
+        HistoryManager.loadHistory(this)
     }
 }
 
@@ -214,6 +212,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        setContentView(R.layout.activity_main)
+
+        // Initialize FileLogger here
+        FileLogger.init(this) // Now your logger is ready for use after MainActivity is running
+
+        val btnRequestHistory = findViewById<Button>(R.id.btnRequestHistory)
+        btnRequestHistory.setOnClickListener {
+            val intent = Intent(this, RequestHistoryActivity::class.java)
+            startActivity(intent)
+        }
+
+
+
         // STEP 1: Check for overlay permission
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "Please enable overlay permission", Toast.LENGTH_LONG).show()
@@ -224,7 +235,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             return
         }
 
-        setContentView(R.layout.activity_main)
+//        setContentView(R.layout.activity_main)
         tvCurrentSpeed = findViewById(R.id.tvCurrentSpeed)
         ivModeSwitch = findViewById(R.id.ivModeSwitch)
         tvDailyEarning = findViewById(R.id.tvDailyEarning)
@@ -273,10 +284,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         drawerLayout.addDrawerListener(toggle)
         toggle.syncState()
 
+        // ----- Updated Navigation Item Selection in MainActivity.kt -----
         navView.setNavigationItemSelectedListener { menuItem ->
             when (menuItem.itemId) {
-                R.id.nav_settings -> {
-                    startActivity(Intent(this, SettingsActivity::class.java))
+                R.id.nav_home -> {
+                    // Handle Home...
                     drawerLayout.closeDrawers()
                     true
                 }
@@ -285,9 +297,32 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     drawerLayout.closeDrawers()
                     true
                 }
+                R.id.nav_gallery -> {
+                    // Handle Gallery...
+                    drawerLayout.closeDrawers()
+                    true
+                }
+                R.id.nav_settings -> {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    drawerLayout.closeDrawers()
+                    true
+                }
+                // New case for Uber
+                R.id.nav_uber -> {
+                    startActivity(Intent(this, UberActivity::class.java))
+                    drawerLayout.closeDrawers()
+                    true
+                }
+                // New case for Lyft Settings
+                R.id.nav_lyft -> {
+                    startActivity(Intent(this, com.stoffeltech.ridetracker.lyft.LyftActivity::class.java))
+                    drawerLayout.closeDrawers()
+                    true
+                }
                 else -> false
             }
         }
+
 
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -627,6 +662,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             ivModeSwitch.setImageResource(R.drawable.ic_sun)
         }
+        UberApiTest.fetchCurrentRideRequest(this) { rideInfoString ->
+            Log.d("MainActivity", "API call result: $rideInfoString")
+        }
     }
 
     override fun onPause() {
@@ -699,16 +737,30 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             DistanceTracker.stopTracking(this)
             hideOverlay()
             updateEarningsUI()
+
+            // ----- STEP 6: Clean up ScreenCaptureService resources -----
+            // Release the text recognizer to free up OCR resources.
+            ScreenCaptureService.releaseTextRecognizer()
+
+            // Recycle and clear the last captured bitmap to avoid stale references.
+            ScreenCaptureService.lastCapturedBitmap?.recycle()
+            ScreenCaptureService.lastCapturedBitmap = null
+
+            // Recycle and clear the last processed bitmap if it exists.
+            ScreenCaptureService.lastProcessedBitmap?.recycle()
+            ScreenCaptureService.lastProcessedBitmap = null
         }
+
         // Only stop MediaProjection if the activity is finishing and not merely undergoing a configuration change.
         if (isFinishing && !isChangingConfigurations) {
-            // Instead of directly stopping MediaProjection here, we now delegate to our centralized manager.
+            // Stop MediaProjection and associated VirtualDisplay(s) via the centralized manager.
             com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager.stopMediaProjection()
             LogHelper.logDebug("MainActivity", "MediaProjection stopped on activity destroy.")
         } else {
             LogHelper.logDebug("MainActivity", "Activity destroyed due to configuration change; keeping MediaProjection alive.")
         }
     }
+
 
     // ============================================================
     // LOGGING SECTION

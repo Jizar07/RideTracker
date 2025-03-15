@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Updated Uber Settings Layout: White background, black text, with separators -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:background="@android:color/white">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@android:color/white">
+
+        <!-- Title for Uber Settings -->
+        <TextView
+            android:id="@+id/tvUberTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Uber Settings"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- - Uber Section: Login/Logout Row - begin - -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+            <Button
+                android:id="@+id/btnUberLogin"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Login"
+                android:textColor="@android:color/black"
+                android:background="@android:color/white" />
+            <Button
+                android:id="@+id/btnUberLogout"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Logout"
+                android:layout_marginStart="8dp"
+                android:textColor="@android:color/black"
+                android:background="@android:color/white" />
+        </LinearLayout>
+        <!-- - Uber Section: Login/Logout Row - end - -->
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- - Uber Settings Section - begin - -->
+        <TextView
+            android:id="@+id/tvUberSettingsSection"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Uber Settings"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable per mile price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable per mile:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberAcceptMile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="1.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberAcceptMileDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter a value that represents an acceptable per-mile price."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Declinable per mile price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Declinable per mile:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberDeclineMile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="0.75"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberDeclineMileDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the per-mile price which a ride is considered declinable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable per hour price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable per hour:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberAcceptHour"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="25.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberAcceptHourDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter a value representing an acceptable per-hour price."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Declinable per hour price -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Declinable per hour:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberDeclineHour"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="20.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberDeclineHourDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the per-hour price which a ride is considered declinable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Declinable Fare (Low) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Declinable Fare:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberFareLow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="5.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberFareLowDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="This will turn text red; enter the amount at which the fare is a sure decline."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable Fare (High) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable Fare:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberFareHigh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="10.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberFareHighDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="This will turn text green; enter the amount at which the fare is acceptable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Acceptable Rating -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Acceptable Rating:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberAcceptRating"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="4.70"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberAcceptRatingDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter a value representing an acceptable rating threshold."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Separator -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Bonus Ride -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Bonus Ride:"
+                android:textColor="@android:color/black" />
+            <EditText
+                android:id="@+id/etUberBonusRide"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="0.0"
+                android:inputType="numberDecimal"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvUberBonusRideDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter the bonus ride value if applicable."
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Save Uber Settings Button -->
+        <Button
+            android:id="@+id/btnUberSaveSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save Uber Settings"
+            android:textColor="@android:color/black"
+            android:background="@android:color/white" />
+
+    </LinearLayout>
+</ScrollView>

@@ -3,376 +3,17 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:paddingTop="24dp"
-    android:background="@color/white"
+    android:background="@android:color/white"
     android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:background="@android:color/white">
 
-        <!-- Acceptable per mile price -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvAcceptMileTitle"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Acceptable per mile price:"
-                android:textColor="@color/black"
-                android:textSize="16sp" />
-
-            <EditText
-                android:id="@+id/etAcceptMile"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/box_background"
-                android:inputType="numberDecimal"
-                android:textColor="@color/black"
-                android:textColorHint="@color/black"
-                android:padding="8dp"
-                android:minWidth="80dp"
-                android:gravity="end"
-                android:hint="1.5" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/tvAcceptMileDesc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Enter a value that represents an acceptable per-mile price."
-            android:textColor="@color/black"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Declinable per mile price -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvDeclineMileTitle"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Declinable per mile price:"
-                android:textColor="@color/black"
-                android:textSize="16sp" />
-
-            <EditText
-                android:id="@+id/etDeclineMile"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/box_background"
-                android:inputType="numberDecimal"
-                android:textColor="@color/black"
-                android:textColorHint="@color/black"
-                android:padding="8dp"
-                android:minWidth="80dp"
-                android:gravity="end"
-                android:hint="0.75" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/tvDeclineMileDesc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Enter the per-mile price which a ride is considered declinable."
-            android:textColor="@color/black"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Acceptable per hour price -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvAcceptHourTitle"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Acceptable per hour price:"
-                android:textColor="@color/black"
-                android:textSize="16sp" />
-
-            <EditText
-                android:id="@+id/etAcceptHour"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/box_background"
-                android:inputType="numberDecimal"
-                android:textColor="@color/black"
-                android:textColorHint="@color/black"
-                android:padding="8dp"
-                android:minWidth="80dp"
-                android:gravity="end"
-                android:hint="25" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/tvAcceptHourDesc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Enter a value representing an acceptable per-hour price."
-            android:textColor="@color/black"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Declinable per hour price -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvDeclineHourTitle"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Declinable per hour price:"
-                android:textColor="@color/black"
-                android:textSize="16sp" />
-
-            <EditText
-                android:id="@+id/etDeclineHour"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/box_background"
-                android:inputType="numberDecimal"
-                android:textColor="@color/black"
-                android:textColorHint="@color/black"
-                android:padding="8dp"
-                android:minWidth="80dp"
-                android:gravity="end"
-                android:hint="20" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/tvDeclineHourDesc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Enter the per-hour price which a ride is considered declinable."
-            android:textColor="@color/black"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Fare thresholds -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvFareLowTitle"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Declinable Fare:"
-                android:textColor="@color/black"
-                android:textSize="16sp" />
-
-            <EditText
-                android:id="@+id/etFareLow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/box_background"
-                android:inputType="numberDecimal"
-                android:textColor="@color/black"
-                android:textColorHint="@color/black"
-                android:padding="8dp"
-                android:minWidth="80dp"
-                android:gravity="end"
-                android:hint="5" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/tvFareLowDesc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="This will turn Text red, enter amount in which fare is a sure decline."
-            android:textColor="@color/black"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvFareHighTitle"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Acceptable Fare:"
-                android:textColor="@color/black"
-                android:textSize="16sp" />
-
-            <EditText
-                android:id="@+id/etFareHigh"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/box_background"
-                android:inputType="numberDecimal"
-                android:textColor="@color/black"
-                android:textColorHint="@color/black"
-                android:padding="8dp"
-                android:minWidth="80dp"
-                android:gravity="end"
-                android:hint="10" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/tvFareHighDesc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="This will turn Text Green, enter amount in which fare is acceptable."
-            android:textColor="@color/black"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-    <!-- Acceptable Rating Setting -->
-    <LinearLayout
-        android:id="@+id/acceptRatingSetting"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-        <TextView
-            android:id="@+id/tvAcceptRatingTitle"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="Acceptable Rating"
-            android:textColor="@color/black"
-            android:textSize="16sp" />
-        <EditText
-            android:id="@+id/etAcceptRating"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/box_background"
-            android:inputType="numberDecimal"
-            android:textColor="@color/black"
-            android:textColorHint="@color/black"
-            android:padding="8dp"
-            android:minWidth="80dp"
-            android:gravity="end"
-            android:hint="13.0" />
-    </LinearLayout>
-        <TextView
-            android:id="@+id/tvAcceptRatingDesc"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="If the ride rating is equal to or above this value, it will display in green; if below, it will display in red."
-            android:textColor="@color/black"
-            android:textSize="12sp" />
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Bonus Challenges -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-        <TextView
-            android:id="@+id/tvBonusRideLabel"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="Bonus per Ride (Challenges)"
-            android:textColor="@color/black"
-            android:textSize="16sp" />
-        <EditText
-            android:id="@+id/etBonusRide"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/box_background"
-            android:inputType="numberDecimal"
-            android:textColor="@color/black"
-            android:textColorHint="@color/black"
-            android:padding="8dp"
-            android:minWidth="80dp"
-            android:gravity="end"
-            android:hint="13.0" />
-    </LinearLayout>
-        <TextView
-            android:id="@+id/tvBonusRideDesc"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Enter the bonus per ride you will receive here, ex: $50 for 25 rides. Set as the bonus per ride (e.g. $2)."
-            android:textColor="@color/black"
-            android:textSize="12sp" />
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Cost of driving setting -->
+        <!-- Cost of Driving Setting -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -385,7 +26,7 @@
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:text="Cost of driving:"
-                android:textColor="@color/black"
+                android:textColor="@android:color/black"
                 android:textSize="16sp" />
 
             <EditText
@@ -395,23 +36,24 @@
                 android:layout_marginStart="8dp"
                 android:background="@drawable/box_background"
                 android:inputType="numberDecimal"
-                android:textColor="@color/black"
-                android:textColorHint="@color/black"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/black"
                 android:padding="8dp"
                 android:minWidth="80dp"
                 android:gravity="end"
                 android:hint="e.g., 0.50" />
         </LinearLayout>
+
         <TextView
             android:id="@+id/tvCostDrivingDesc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Enter the cost of driving your car (per mile). This varies from person to person, please do your own research."
-            android:textColor="@color/black"
+            android:textColor="@android:color/black"
             android:textSize="12sp"
             android:paddingTop="4dp" />
 
-        <!-- Spacer to push Save button to bottom -->
+        <!-- Spacer -->
         <View
             android:layout_width="match_parent"
             android:layout_height="24dp" />
@@ -421,7 +63,9 @@
             android:id="@+id/btnSaveSettings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Save Settings" />
+            android:text="Save Settings"
+            android:textColor="@android:color/black"
+            android:background="@android:color/white" />
 
     </LinearLayout>
 </ScrollView>

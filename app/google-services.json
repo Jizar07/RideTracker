@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "231363822294",
+    "project_id": "ridetracker-dd0ea",
+    "storage_bucket": "ridetracker-dd0ea.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:231363822294:android:b476d3e88fc32aea527f77",
+        "android_client_info": {
+          "package_name": "com.stoffeltech.ridetracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAStayAzPFSRMZl09qUqdDiDC9h_eZfb9I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

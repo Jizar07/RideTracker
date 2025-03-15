@@ -14,13 +14,19 @@
             android:icon="@drawable/ic_shift_info" />
 
         <item
-            android:id="@+id/nav_gallery"
-            android:icon="@drawable/ic_menu_gallery"
-            android:title="@string/menu_gallery" />
-        <item
             android:id="@+id/nav_settings"
             android:icon="@drawable/settings"
             android:title="Settings" />
-
     </group>
+
+    <!-- New top-level Uber menu item -->
+    <item
+        android:id="@+id/nav_uber"
+        android:title="Uber"
+        android:icon="@drawable/ic_uber" />
+
+    <item
+        android:id="@+id/nav_lyft"
+        android:icon="@drawable/ic_lyft"
+        android:title="Lyft" />
 </menu>

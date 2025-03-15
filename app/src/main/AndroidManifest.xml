@@ -116,6 +116,24 @@
             android:theme="@style/Theme.RideTracker.NoActionBar" />
         <activity android:name=".ShiftInformationActivity" />
 
+        <activity
+            android:name="com.stoffeltech.ridetracker.uber.UberActivity"
+            android:label="Uber Settings" />
+        <activity
+            android:name="com.stoffeltech.ridetracker.uber.LoginActivity"
+            android:label="Uber Login" />
+
+        <activity
+            android:name="com.stoffeltech.ridetracker.lyft.LyftActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RideTracker.NoActionBar"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:label="Lyft Settings" />
+
+        <activity
+            android:name=".RequestHistoryActivity"
+            android:theme="@style/Theme.RideTracker" />
+
 
     </application>
 </manifest>
