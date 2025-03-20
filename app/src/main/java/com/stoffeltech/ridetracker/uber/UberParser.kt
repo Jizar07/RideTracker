@@ -13,6 +13,8 @@ import com.stoffeltech.ridetracker.SettingsActivity
 import com.stoffeltech.ridetracker.services.FloatingOverlayService
 import com.stoffeltech.ridetracker.services.RideInfo
 import com.stoffeltech.ridetracker.utils.FileLogger
+import com.stoffeltech.ridetracker.utils.RideScoreSettings
+
 import kotlin.math.abs
 
 // Define Uber-specific keys internally.
@@ -494,7 +496,7 @@ object UberParser {
         // Early return if text does not contain required keywords.
         // ----- ADDED LOG: Log even if the required keywords are missing -----
         if (!trimmedText.contains("Accept", ignoreCase = true) && !trimmedText.contains("Match", ignoreCase = true)) {
-            FileLogger.log("UberParser", "Request rejected: missing Accept/Match keywords. Raw text: $trimmedText")
+//            FileLogger.log("UberParser", "Request rejected: missing Accept/Match keywords. Raw text: $trimmedText")
             return
         }
 
@@ -643,6 +645,30 @@ object UberParser {
             ratingColor = computedRatingColor,
             stops = rideInfo.stops ?: ""
         )
+        // ----- NEW CODE INSERTION: Ride Score Calculation -----
+
+// Create a RideScoreSettings instance using Uber preference thresholds.
+// Adjust the scale factors and weights as desired.
+        val rideScoreSettings = com.stoffeltech.ridetracker.utils.RideScoreSettings(
+            idealPMile = acceptMile,       // Ideal price per mile (e.g., 1.0)
+            idealPHour = acceptHour,       // Ideal price per hour (e.g., 25.0)
+            idealFare = fareHigh,          // Ideal fare price (e.g., 10.0)
+            scaleFactorPMile = 50f,        // Scale factor for overshoot in p/mile
+            scaleFactorPHour = 2f,         // Scale factor for overshoot in p/hour
+            scaleFactorFare = 10f,         // Scale factor for overshoot in fare price
+            weightPMile = 0.33f,           // Weight for price per mile (must sum to 1.0 with others)
+            weightPHour = 0.33f,           // Weight for price per hour
+            weightFare = 0.34f             // Weight for fare price
+        )
+
+// Call the new updateScore companion function to update the ride score on the overlay.
+        com.stoffeltech.ridetracker.services.FloatingOverlayService.updateScore(
+            actualPMile = pricePerMile.toFloat(),   // Actual price per mile computed earlier.
+            actualPHour = pricePerHour.toFloat(),    // Actual price per hour computed earlier.
+            actualFare = adjustedFare.toFloat(),     // Actual fare price after adjustments.
+            settings = rideScoreSettings
+        )
+
         Handler(Looper.getMainLooper()).postDelayed({
             FloatingOverlayService.hideOverlay()
         }, 6000)
@@ -715,7 +741,35 @@ object UberParser {
         ratingColor = defaultRatingColor,  // Added parameter for rating color.
         stops = rideInfo.stops ?: ""
     )
-    Handler(Looper.getMainLooper()).postDelayed({
+        // ----- NEW CODE INSERTION for Delivery: Ride Score Calculation -----
+
+// Create RideScoreSettings instance for deliveries.
+// You may adjust these ideal values, scale factors, and weights to suit delivery requests.
+        val rideScoreSettings = com.stoffeltech.ridetracker.utils.RideScoreSettings(
+            idealPMile = prefsFromUber.getFloat(UberKeys.KEY_ACCEPT_MILE, 1.0f),  // Example: 1.0
+            idealPHour = prefsFromUber.getFloat(UberKeys.KEY_ACCEPT_HOUR, 25.0f),  // Example: 25.0
+            idealFare = prefsFromUber.getFloat(UberKeys.KEY_FARE_HIGH, 10.0f),       // Example: 10.0
+            scaleFactorPMile = 50f,        // Scale factor for p/mile overshoot
+            scaleFactorPHour = 2f,         // Scale factor for p/hour overshoot
+            scaleFactorFare = 10f,         // Scale factor for fare overshoot
+            weightPMile = 0.33f,           // Weight for price per mile
+            weightPHour = 0.33f,           // Weight for price per hour
+            weightFare = 0.34f             // Weight for fare price
+        )
+
+//// Calculate actual price per mile and per hour for delivery.
+//        val pricePerMile = if (totalMiles > 0) adjustedFare / totalMiles else 0.0
+//        val pricePerHour = if (totalMinutes > 0) adjustedFare / (totalMinutes / 60.0) else 0.0
+
+// Update the overlay with the ride score for delivery.
+        com.stoffeltech.ridetracker.services.FloatingOverlayService.updateScore(
+            actualPMile = pricePerMile.toFloat(),
+            actualPHour = pricePerHour.toFloat(),
+            actualFare = adjustedFare.toFloat(),
+            settings = rideScoreSettings
+        )
+
+        Handler(Looper.getMainLooper()).postDelayed({
         FloatingOverlayService.hideOverlay()
     }, 6000)
 }

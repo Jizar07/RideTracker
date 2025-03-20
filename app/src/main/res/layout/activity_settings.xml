@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- activity_settings.xml -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -58,7 +59,7 @@
             android:layout_width="match_parent"
             android:layout_height="24dp" />
 
-        <!-- Save Button -->
+        <!-- Save Button for Cost of Driving -->
         <Button
             android:id="@+id/btnSaveSettings"
             android:layout_width="match_parent"
@@ -66,6 +67,44 @@
             android:text="Save Settings"
             android:textColor="@android:color/black"
             android:background="@android:color/white" />
+
+        <!-- Spacer -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="24dp" />
+
+        <!-- New Row for Manual Revenue Entry Buttons -->
+        <LinearLayout
+            android:id="@+id/llManualRevenueRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:weightSum="2">
+
+            <!-- Button for Private Ride Revenue -->
+            <Button
+                android:id="@+id/btnAddPrivateRides"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:background="#4CAF50"
+                android:text="Add Private"
+                android:textColor="@android:color/black" />
+
+            <!-- Button for Tip Revenue -->
+            <Button
+                android:id="@+id/btnAddTips"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:background="#4CAF50"
+                android:text="Add Tip"
+                android:textColor="@android:color/black" />
+        </LinearLayout>
+
 
     </LinearLayout>
 </ScrollView>

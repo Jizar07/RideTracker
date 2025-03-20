@@ -1,31 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<TableLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/overlayRoot"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:background="#CD000000"
-    android:gravity="center_horizontal"
-    android:orientation="vertical"
-    android:padding="10dp">
+    android:gravity="center"
+    android:padding="10dp"
+    android:stretchColumns="0,1,2"
+    android:shrinkColumns="0,1,2">
 
     <!-- Row 1: Fare, Distance, Minutes -->
-    <LinearLayout
-        android:id="@+id/row1"
-        android:layout_width="wrap_content"
+    <TableRow
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:gravity="center">
 
-        <!-- Fare Block -->
+        <!-- Fare cell -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
             android:gravity="center_horizontal"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingEnd="16dp">
 
             <TextView
                 android:id="@+id/tvFareLabel"
@@ -46,13 +45,13 @@
                 android:textSize="20sp" />
         </LinearLayout>
 
-        <!-- Distance Block -->
+        <!-- Distance cell -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
             android:gravity="center_horizontal"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingEnd="16dp">
 
             <TextView
                 android:id="@+id/tvMilesLabel"
@@ -74,7 +73,7 @@
                 android:textSize="16sp" />
         </LinearLayout>
 
-        <!-- Minutes Block -->
+        <!-- Minutes cell -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -100,24 +99,23 @@
                 android:textColor="@color/white"
                 android:textSize="16sp" />
         </LinearLayout>
-    </LinearLayout>
+    </TableRow>
 
     <!-- Row 2: Profit/Loss, p/Mile, p/Hour -->
-    <LinearLayout
+    <TableRow
         android:id="@+id/row2"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:gravity="center">
 
-        <!-- Profit/Loss Block -->
+        <!-- Profit/Loss cell -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
             android:gravity="center_horizontal"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingEnd="16dp">
 
             <TextView
                 android:id="@+id/tvProfitLossLabel"
@@ -139,13 +137,13 @@
                 android:textSize="20sp" />
         </LinearLayout>
 
-        <!-- p/Mile Block -->
+        <!-- p/Mile cell -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
             android:gravity="center_horizontal"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingEnd="16dp">
 
             <TextView
                 android:id="@+id/tvPMileLabel"
@@ -166,7 +164,7 @@
                 android:textSize="20sp" />
         </LinearLayout>
 
-        <!-- p/Hour Block -->
+        <!-- p/Hour cell -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -191,24 +189,26 @@
                 android:text="$0.00"
                 android:textSize="20sp" />
         </LinearLayout>
-    </LinearLayout>
+    </TableRow>
 
-    <!-- Row 3: Ride Type, Combined Rating/Stops, and Close Button -->
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <!-- Row 3: Ride Type, Rating/Stops, and Score -->
+    <!-- EXACT same style as Row 1 and 2 (match width, center, same padding, etc.) -->
+    <TableRow
         android:id="@+id/row3"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:paddingHorizontal="8dp">
+        android:gravity="center">
 
-        <!-- Ride Type Block -->
+        <!-- Ride Type cell -->
         <LinearLayout
             android:id="@+id/rideTypeBlock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
             android:orientation="vertical"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent">
+            android:paddingEnd="16dp">
+
             <TextView
                 android:id="@+id/tvRideTypeLabel"
                 android:layout_width="wrap_content"
@@ -218,79 +218,101 @@
                 android:textColor="@color/white"
                 android:textSize="12sp"
                 android:textStyle="bold" />
+
             <TextView
                 android:id="@+id/tvRideTypeValue"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:singleLine="true"
                 android:ellipsize="end"
-                android:maxLines="2"
                 android:text="Unknown"
                 android:textColor="@color/quantum_lightblueA400"
                 android:textSize="20sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- Combined Rating/Stops Block -->
+        <!-- Rating/Stops cell -->
         <LinearLayout
             android:id="@+id/ratingBlock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
             android:orientation="vertical"
-            app:layout_constraintStart_toEndOf="@id/rideTypeBlock"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/btnCloseOverlay"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
+            android:paddingEnd="16dp">
+
             <TextView
                 android:id="@+id/tvRatingLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:singleLine="true"
                 android:text="Rating"
                 android:textStyle="bold"
                 android:textColor="@color/white"
                 android:textSize="12sp" />
+
             <TextView
                 android:id="@+id/tvRatingValue"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:maxLines="1"
+                android:singleLine="true"
                 android:text="N/A"
                 android:textSize="20sp" />
-            <!-- New TextView for stops -->
+
             <TextView
                 android:id="@+id/tvStopsValue"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:maxLines="1"
+                android:singleLine="true"
                 android:text=""
                 android:textSize="16sp"
                 android:textColor="#D00606" />
-
         </LinearLayout>
 
-
-
-        <!-- Close Button -->
-        <Button
-            android:id="@+id/btnCloseOverlay"
+        <!-- Score cell -->
+        <LinearLayout
+            android:id="@+id/scoreBlock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="close"
-            android:textSize="12sp"
-            app:cornerRadius="20dp"
-            app:iconTintMode="add"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
-    </androidx.constraintlayout.widget.ConstraintLayout>
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
 
-    <!-- floating_overlay.xml (around line 59) -->
-    <ImageView
-        android:id="@+id/ivOcrPreview"
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:layout_margin="8dp"
-        android:adjustViewBounds="true"
-        android:scaleType="fitCenter"
-        android:visibility="gone" />
+            <!-- Score label -->
+            <TextView
+                android:id="@+id/tvScoreLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:text="Score"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
-    </LinearLayout>
+            <!-- Score numeric value -->
+            <TextView
+                android:id="@+id/tvRideScore"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="32sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
+        </LinearLayout>
+    </TableRow>
+
+    <!-- OCR Preview (optional) -->
+    <TableRow
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal">
+
+        <ImageView
+            android:id="@+id/ivOcrPreview"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_margin="8dp"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
+    </TableRow>
+
+</TableLayout>

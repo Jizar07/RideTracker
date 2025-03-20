@@ -1,7 +1,6 @@
 package com.stoffeltech.ridetracker.services
 
 import android.annotation.SuppressLint
-import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
@@ -9,14 +8,12 @@ import android.graphics.Rect
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.os.Build
-import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
-import android.provider.MediaStore
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.hardware.display.VirtualDisplay
 import kotlinx.coroutines.*
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -26,11 +23,8 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.stoffeltech.ridetracker.uber.UberParser
 import com.stoffeltech.ridetracker.utils.FileLogger
-import java.io.File
-import java.io.FileOutputStream
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
-import kotlin.coroutines.resume
+
 
 /**
  * ---------------- SCREEN CAPTURE SERVICE ----------------
@@ -55,23 +49,73 @@ object ScreenCaptureService {
 
 
     // ----- CACHE TEXT RECOGNIZER INSTANCE - single instance for reuse -----
-    private val textRecognizer by lazy {
-        // Create a default options instance using the builder.
-        val options = TextRecognizerOptions.Builder().build()
-        // Pass the options instance to getClient()
-        TextRecognition.getClient(options)
+    // ----- UPDATED: Mutable detector with getter -----
+    private var textRecognizerInstance: com.google.mlkit.vision.text.TextRecognizer? = null
+
+    private fun getTextRecognizer(): com.google.mlkit.vision.text.TextRecognizer {
+        if (textRecognizerInstance == null) {
+            val options = com.google.mlkit.vision.text.latin.TextRecognizerOptions.Builder().build()
+            textRecognizerInstance = com.google.mlkit.vision.text.TextRecognition.getClient(options)
+        }
+        return textRecognizerInstance!!
     }
+
+    // ----- PERSISTENT CAPTURE RESOURCES -----
+    private var globalVirtualDisplay: VirtualDisplay? = null
+    private var globalImageReader: ImageReader? = null
+    private var globalHandlerThread: HandlerThread? = null
+
+    // ----- INITIALIZE PERSISTENT CAPTURE RESOURCES -----
+// Call this function once when MediaProjection is granted.
+    fun initPersistentCapture(context: Context, mediaProjection: MediaProjection) {
+        if (globalVirtualDisplay == null || globalImageReader == null || globalHandlerThread == null) {
+            globalHandlerThread = HandlerThread("PersistentOcrThread").apply { start() }
+            val handler = Handler(globalHandlerThread!!.looper)
+            val metrics = context.resources.displayMetrics
+            val width = metrics.widthPixels
+            val height = metrics.heightPixels
+            // Create an ImageReader with a capacity of 2 for continuous availability.
+            globalImageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+            globalVirtualDisplay = mediaProjection.createVirtualDisplay(
+                "PersistentOcrDisplay",
+                width,
+                height,
+                metrics.densityDpi,
+                0,
+                globalImageReader!!.surface,
+                null,
+                handler
+            )
+            FileLogger.log("ScreenCaptureService", "Persistent capture resources initialized.")
+        }
+    }
+
+    // ----- RELEASE PERSISTENT CAPTURE RESOURCES -----
+// Call this function when ending the session (e.g., when MediaProjection stops).
+    fun releasePersistentCapture() {
+        globalVirtualDisplay?.release()
+        globalImageReader?.close()
+        globalHandlerThread?.quitSafely()
+        globalVirtualDisplay = null
+        globalImageReader = null
+        globalHandlerThread = null
+        FileLogger.log("ScreenCaptureService", "Persistent capture resources released.")
+    }
+
+
 
 
     // ----- RELEASE TEXT RECOGNIZER INSTANCE -----
     fun releaseTextRecognizer() {
         try {
-            textRecognizer.close()  // Safely releases resources
+            textRecognizerInstance?.close()
+            textRecognizerInstance = null // Reset so a new instance is created next time
             FileLogger.log("ScreenCaptureService", "TextRecognizer released")
         } catch (e: Exception) {
             FileLogger.log("ScreenCaptureService", "Error releasing TextRecognizer: ${e.message}")
         }
     }
+
 
 
     // -------------- NEW GLOBALS FOR BOUNDING BOX --------------
@@ -90,10 +134,9 @@ object ScreenCaptureService {
             try {
                 val startTime = System.currentTimeMillis()  // --- PROFILE: Start time ---
                 val image = InputImage.fromBitmap(bitmap, 0)
-                // Use the cached textRecognizer instance instead of creating a new one
-                val result = textRecognizer.process(image).await()
+                // Use our fresh (or reinitialized) detector
+                val result = getTextRecognizer().process(image).await()
                 val duration = System.currentTimeMillis() - startTime  // --- PROFILE: End time ---
-//                FileLogger.log("ScreenCaptureService", "OCR extracted text: ${result.text} (processed in $duration ms)")
                 result.text
             } catch (e: Exception) {
                 FileLogger.log("ScreenCaptureService", "Error during OCR processing: ${e.message}")
@@ -101,6 +144,8 @@ object ScreenCaptureService {
             }
         }
     }
+
+
 
     /**
      * Continuously captures frames for OCR and sends the captured texts to the provided callback.
@@ -268,7 +313,7 @@ object ScreenCaptureService {
             val fullScreenImage = InputImage.fromBitmap(capturedBitmap, 0)
             // Removed creation of new recognizer and use the cached textRecognizer instead
             val fullScreenResult = try {
-                textRecognizer.process(fullScreenImage).await()
+                getTextRecognizer().process(fullScreenImage).await()
             } catch (e: Exception) {
                 FileLogger.log("ScreenCaptureService", "Error during quick OCR: ${e.message}")
                 null
@@ -371,7 +416,7 @@ object ScreenCaptureService {
             val finalImage = InputImage.fromBitmap(binaryFinalBitmap, 0)
 
             val finalResult = try {
-                textRecognizer.process(finalImage).await()
+                getTextRecognizer().process(finalImage).await()
             } catch (e: Exception) {
                 FileLogger.log("ScreenCaptureService", "Error during final OCR: ${e.message}")
                 null
@@ -469,8 +514,8 @@ object ScreenCaptureService {
         return binaryBitmap
     }
     // ----- HELPER FUNCTION: Compare Two Bitmaps for Similarity -----
-// This function downsamples both bitmaps and calculates a difference metric.
-// If the total difference is below 'threshold', they are considered similar.
+    // This function downsamples both bitmaps and calculates a difference metric.
+    // If the total difference is below 'threshold', they are considered similar.
     fun areBitmapsSimilar(bmp1: Bitmap, bmp2: Bitmap, sampleSize: Int = 10, threshold: Int = 1000): Boolean {
         // Downscale both bitmaps to reduce computation.
         val scaledBmp1 = Bitmap.createScaledBitmap(bmp1, sampleSize, sampleSize, true)
@@ -491,6 +536,129 @@ object ScreenCaptureService {
             }
         }
         return diff < threshold
+    }
+    // ----- PERSISTENT ON-DEMAND OCR CAPTURE FUNCTION (Polling Approach) -----
+    // This function reuses the persistent VirtualDisplay and ImageReader by polling for the latest image.
+    suspend fun captureOcrOnDemandPersistent(
+        context: Context,
+        captureTimeoutMillis: Long = 1000  // Adjust timeout as needed
+    ): String? {
+        // Wait until persistent resources are initialized (poll up to captureTimeoutMillis)
+        val startWait = System.currentTimeMillis()
+        while (globalImageReader == null && System.currentTimeMillis() - startWait < captureTimeoutMillis) {
+            delay(50)
+        }
+        if (globalImageReader == null || globalVirtualDisplay == null) {
+            FileLogger.log("ScreenCaptureService", "Persistent capture resources not initialized.")
+            return null
+        }
+        // Clear out any stale images from previous captures.
+        while (true) {
+            val staleImage = globalImageReader!!.acquireLatestImage()
+            if (staleImage != null) {
+                staleImage.close()
+            } else {
+                break
+            }
+        }
+
+        // Poll for a new image up to captureTimeoutMillis
+        var image = globalImageReader!!.acquireLatestImage()
+        val startTime = System.currentTimeMillis()
+        while (image == null && System.currentTimeMillis() - startTime < captureTimeoutMillis) {
+            delay(20) // Poll every 50ms
+            image = globalImageReader!!.acquireLatestImage()
+        }
+
+        if (image == null) {
+            FileLogger.log("ScreenCaptureService", "Persistent on-demand bitmap capture timed out or failed.")
+            return null
+        }
+
+        // Process the captured image
+        return try {
+            val metrics = context.resources.displayMetrics
+            val width = metrics.widthPixels
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * width
+
+            val fullBitmap = Bitmap.createBitmap(
+                width + rowPadding / pixelStride,
+                metrics.heightPixels,
+                Bitmap.Config.ARGB_8888
+            )
+            fullBitmap.copyPixelsFromBuffer(buffer)
+            image.close()
+
+            // Optionally process the bitmap (e.g., convert to grayscale) for improved OCR accuracy.
+            val processedBitmap = toGrayscale(fullBitmap)
+            runOcrOnBitmap(processedBitmap)
+        } catch (e: Exception) {
+            FileLogger.log("ScreenCaptureService", "Error processing image: ${e.message}")
+            image.close()
+            null
+        }
+    }
+    // ----- PERSISTENT BITMAP CAPTURE FUNCTION -----
+    // This function captures a raw Bitmap using the persistent VirtualDisplay and ImageReader.
+    suspend fun captureBitmapPersistent(
+        context: Context,
+        captureTimeoutMillis: Long = 1000  // Adjust as needed
+    ): Bitmap? {
+        if (globalImageReader == null || globalVirtualDisplay == null) {
+            FileLogger.log("ScreenCaptureService", "Persistent capture resources not initialized.")
+            return null
+        }
+
+        // Drain any stale images
+        while (true) {
+            val staleImage = globalImageReader!!.acquireLatestImage()
+            if (staleImage != null) {
+                staleImage.close()
+            } else {
+                break
+            }
+        }
+
+        // Poll for a fresh image
+        var image = globalImageReader!!.acquireLatestImage()
+        val startTime = System.currentTimeMillis()
+        while (image == null && System.currentTimeMillis() - startTime < captureTimeoutMillis) {
+            delay(20) // Poll every 20ms
+            image = globalImageReader!!.acquireLatestImage()
+        }
+
+        if (image == null) {
+            FileLogger.log("ScreenCaptureService", "Persistent bitmap capture timed out or failed.")
+            return null
+        }
+
+        return try {
+            val metrics = context.resources.displayMetrics
+            val width = metrics.widthPixels
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * width
+
+            // Create the bitmap based on screen dimensions.
+            val bitmap = Bitmap.createBitmap(
+                width + rowPadding / pixelStride,
+                metrics.heightPixels,
+                Bitmap.Config.ARGB_8888
+            )
+            bitmap.copyPixelsFromBuffer(buffer)
+            image.close()
+            bitmap
+        } catch (e: Exception) {
+            FileLogger.log("ScreenCaptureService", "Error capturing bitmap: ${e.message}")
+            image.close()
+            null
+        }
     }
 
 }

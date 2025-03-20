@@ -33,6 +33,9 @@ import kotlinx.coroutines.cancel
 import com.stoffeltech.ridetracker.services.ScreenshotService
 import com.stoffeltech.ridetracker.uber.UberParser
 import com.stoffeltech.ridetracker.utils.FileLogger
+import com.stoffeltech.ridetracker.utils.RideScoreSettings
+import com.stoffeltech.ridetracker.utils.calculateRideScore
+import com.stoffeltech.ridetracker.utils.getScoreColor
 
 class FloatingOverlayService : Service() {
 
@@ -55,6 +58,7 @@ class FloatingOverlayService : Service() {
     lateinit var tvRatingValue: TextView
     lateinit var tvRatingLabel: TextView
     lateinit var tvStopsValue: TextView
+
 
     // We'll keep an ImageView reference for OCR preview:
     private lateinit var ivOcrPreview: ImageView
@@ -92,6 +96,8 @@ class FloatingOverlayService : Service() {
     // when no valid ride request has been detected within the threshold duration.
     private lateinit var overlayCheckHandler: Handler
     private lateinit var overlayCheckRunnable: Runnable
+    private lateinit var tvRideScore: TextView
+
 
     companion object {
         private const val CHANNEL_ID = "FloatingOverlayServiceChannel"
@@ -116,54 +122,54 @@ class FloatingOverlayService : Service() {
          */
         @SuppressLint("SetTextI18n")
         fun updateOverlay(
-    rideType: String,
-    isExclusive: Boolean,
-    fare: String, fareColor: Int,
-    pMile: String, pMileColor: Int,
-    pHour: String, pHourColor: Int,
-    miles: String,
-    minutes: String,
-    profit: String, profitColor: Int,
-    rating: String,
-    ratingColor: Int,  // New parameter
-    stops: String
-) {
-    instance?.serviceScope?.launch {
-        instance?.floatingView?.visibility = View.VISIBLE
-        // Update ride type text.
-        instance?.tvRideTypeValue?.text = rideType
-        if (isExclusive) {
-            instance?.tvRideTypeValue?.setTextColor(Color.parseColor("#088DA5"))
-        } else {
-            instance?.tvRideTypeValue?.setTextColor(Color.WHITE)
-        }
-        instance?.tvFareValue?.text = fare
-        instance?.tvFareValue?.setTextColor(fareColor)
-        instance?.tvPMileValue?.text = pMile
-        instance?.tvPMileValue?.setTextColor(pMileColor)
-        instance?.tvPHourValue?.text = pHour
-        instance?.tvPHourValue?.setTextColor(pHourColor)
-        instance?.tvMilesValue?.text = miles
-        instance?.tvTimeValue?.text = minutes
-        instance?.tvProfitLossValue?.text = profit
-        instance?.tvProfitLossValue?.setTextColor(profitColor)
+            rideType: String,
+            isExclusive: Boolean,
+            fare: String, fareColor: Int,
+            pMile: String, pMileColor: Int,
+            pHour: String, pHourColor: Int,
+            miles: String,
+            minutes: String,
+            profit: String, profitColor: Int,
+            rating: String,
+            ratingColor: Int,  // New parameter
+            stops: String
+        ) {
+            instance?.serviceScope?.launch {
+                instance?.floatingView?.visibility = View.VISIBLE
+                // Update ride type text.
+                instance?.tvRideTypeValue?.text = rideType
+                if (isExclusive) {
+                    instance?.tvRideTypeValue?.setTextColor(Color.parseColor("#088DA5"))
+                } else {
+                    instance?.tvRideTypeValue?.setTextColor(Color.WHITE)
+                }
+                instance?.tvFareValue?.text = fare
+                instance?.tvFareValue?.setTextColor(fareColor)
+                instance?.tvPMileValue?.text = pMile
+                instance?.tvPMileValue?.setTextColor(pMileColor)
+                instance?.tvPHourValue?.text = pHour
+                instance?.tvPHourValue?.setTextColor(pHourColor)
+                instance?.tvMilesValue?.text = miles
+                instance?.tvTimeValue?.text = minutes
+                instance?.tvProfitLossValue?.text = profit
+                instance?.tvProfitLossValue?.setTextColor(profitColor)
 
-        // For rating, use the passed rating color.
-        instance?.tvRatingLabel?.text = "Rating"
-        instance?.tvRatingLabel?.setTextColor(Color.WHITE)
-        instance?.tvRatingValue?.text = rating
-        instance?.tvRatingValue?.setTextColor(ratingColor)
-        if (stops.isNotEmpty()) {
-            instance?.tvStopsValue?.text = stops
-        } else {
-            instance?.tvStopsValue?.text = ""
+                // For rating, use the passed rating color.
+                instance?.tvRatingLabel?.text = "Rating"
+                instance?.tvRatingLabel?.setTextColor(Color.WHITE)
+                instance?.tvRatingValue?.text = rating
+                instance?.tvRatingValue?.setTextColor(ratingColor)
+                if (stops.isNotEmpty()) {
+                    instance?.tvStopsValue?.text = stops
+                } else {
+                    instance?.tvStopsValue?.text = ""
+                }
+                // Trigger a full-screen screenshot including the floating overlay.
+                instance?.let { service ->
+                    ScreenshotService.captureFullScreen(service, rideType)
+                }
+            }
         }
-        // Trigger a full-screen screenshot including the floating overlay.
-        instance?.let { service ->
-            ScreenshotService.captureFullScreen(service, rideType)
-        }
-    }
-}
 
 
         /**
@@ -197,6 +203,19 @@ class FloatingOverlayService : Service() {
             }
             return null
         }
+        // ----- NEW: Expose updateRideScore via a companion method -----
+        // Insert this inside your companion object in FloatingOverlayService.kt
+        fun updateScore(
+            actualPMile: Float,
+            actualPHour: Float,
+            actualFare: Float,
+            settings: com.stoffeltech.ridetracker.utils.RideScoreSettings
+        ) {
+            // Force main thread updates
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                instance?.updateRideScore(actualPMile, actualPHour, actualFare, settings)
+            }
+        }
     }
 
     private lateinit var windowManager: WindowManager
@@ -226,6 +245,7 @@ class FloatingOverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         floatingView = LayoutInflater.from(this).inflate(R.layout.floating_overlay, null)
 
+
         // Set initial visibility to GONE so the overlay doesn't show immediately.
         floatingView?.visibility = View.GONE
 
@@ -251,6 +271,9 @@ class FloatingOverlayService : Service() {
         tvRatingValue = floatingView!!.findViewById(R.id.tvRatingValue)
         tvRatingLabel = floatingView!!.findViewById(R.id.tvRatingLabel)
         tvStopsValue = floatingView!!.findViewById(R.id.tvStopsValue)
+
+        // Initialize the new ride score TextView.
+        tvRideScore = floatingView!!.findViewById<TextView>(R.id.tvRideScore)
 
         // Initialize our OCR preview ImageView
         ivOcrPreview = floatingView!!.findViewById(R.id.ivOcrPreview)
@@ -320,13 +343,13 @@ class FloatingOverlayService : Service() {
         }
 
         // Set up the close button to hide the overlay.
-        val btnClose = floatingView!!.findViewById<Button>(R.id.btnCloseOverlay)
-        btnClose.setOnClickListener {
-            // You can choose to simply hide the overlay...
-            hideOverlay()
-            // ...or stop the service completely:
-            // stopSelf()
-        }
+//        val btnClose = floatingView!!.findViewById<Button>(R.id.btnCloseOverlay)
+//        btnClose.setOnClickListener {
+//            // You can choose to simply hide the overlay...
+//            hideOverlay()
+//            // ...or stop the service completely:
+//            // stopSelf()
+//        }
 
         // Add the view
         windowManager.addView(floatingView, layoutParams)
@@ -428,4 +451,23 @@ class FloatingOverlayService : Service() {
             manager.createNotificationChannel(serviceChannel)
         }
     }
+    /**
+     * New function to update the ride score on the overlay.
+     * @param actualPMile The actual price per mile.
+     * @param actualPHour The actual price per hour.
+     * @param actualFare The actual fare price.
+     * @param settings User-defined settings including ideal values, scale factors, and weights.
+     */
+    fun updateRideScore(
+        actualPMile: Float,
+        actualPHour: Float,
+        actualFare: Float,
+        settings: RideScoreSettings
+    ) {
+        val score = calculateRideScore(actualPMile, actualPHour, actualFare, settings)
+        val color = getScoreColor(score)
+        tvRideScore.text = score.toInt().toString()
+        tvRideScore.setTextColor(color)
+    }
+
 }

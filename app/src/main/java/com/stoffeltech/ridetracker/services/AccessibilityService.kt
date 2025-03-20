@@ -45,6 +45,11 @@ class AccessibilityService : AccessibilityService() {
         private var lastExtractedDailyEarnings: Double = 0.0
         // Stores the date (formatted as "yyyyMMdd") of the last extraction.
         private var lastExtractionDate: String = ""
+
+        // ----- NEW: Debounce variable for on-demand OCR capture -----
+        private var lastOcrCaptureTime: Long = 0L
+        // Define a debounce threshold (e.g., 10 seconds)
+        private const val OCR_CAPTURE_DEBOUNCE_MS = 2000L
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -57,32 +62,31 @@ class AccessibilityService : AccessibilityService() {
             val detectedText = extractTextFromNode(event.source).ifBlank { event.text.joinToString(" ") }
 
             // --- ADDED LOG: Print the extracted text for debugging ---
-//            FileLogger.log("AccessibilityService", "Extracted text from event: $detectedText")
+            //            FileLogger.log("AccessibilityService", "Extracted text from event: $detectedText")   // ------------------------------------------------------------------ SHOW LOG FROM ACC EXTRACTED TEXT
 
             // ---------------- SPECIFIC EARNINGS EXTRACTION -----------------
             // Look for the specific earnings string following "TODAY"
             // New regex to capture the dollar amount immediately before "TODAY"
             // This will look for a "$", capture one or more digits, a period, and exactly two digits, then "TODAY".
+            // Existing extraction block in onAccessibilityEvent:
             val earningsRegex = Regex("\\$(\\d+\\.\\d{2})TODAY")
-
-            val earningsMatch = earningsRegex.find(detectedText)
+            val progressRegex = Regex("SEE PROGRESS\\$(\\d+\\.\\d{2})")
+            // Try to match the "TODAY" pattern first, then "SEE PROGRESS" if that fails.
+            val earningsMatch = earningsRegex.find(detectedText) ?: progressRegex.find(detectedText)
             if (earningsMatch != null) {
+                // Both regexes capture the amount in group 1.
                 val earningsStr = earningsMatch.groupValues[1]
                 val currentDailyEarnings = earningsStr.toDoubleOrNull() ?: 0.0
-                // Log the extracted earnings value.
-                FileLogger.log("AccessibilityService", "Extracted daily earnings from 'TODAY': $$currentDailyEarnings")
+                FileLogger.log("AccessibilityService", "Extracted daily earnings: $$currentDailyEarnings")
 
                 // ----- NEW: Check for new day by comparing formatted dates -----
-                // Get today's date as a string formatted as "yyyyMMdd"
                 val currentDate = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
-                // If the current date is different from the last extraction date, reset the last extracted earnings.
                 if (currentDate != lastExtractionDate) {
                     FileLogger.log("AccessibilityService", "New day detected. Resetting last extracted earnings.")
                     lastExtractedDailyEarnings = 0.0
                     lastExtractionDate = currentDate
                 }
 
-                // Only update if the new earnings value is higher than the last recorded value.
                 if (currentDailyEarnings > lastExtractedDailyEarnings) {
                     val delta = currentDailyEarnings - lastExtractedDailyEarnings
                     FileLogger.log("AccessibilityService", "New earnings detected. Delta: $$delta")
@@ -90,21 +94,59 @@ class AccessibilityService : AccessibilityService() {
                     lastExtractedDailyEarnings = currentDailyEarnings
                 }
             }
+
             // ---------------------------------------------------------------
 
             // -------------------- PROCESS EVENTS FROM UBER'S APP --------------------
+            // ----- Existing Uber processing block -----
+//            if (packageName.contains("com.ubercab.driver", ignoreCase = true) || packageName.contains("com.google.android.apps.nbu.files", ignoreCase = true)) {
+
             if (packageName.contains("com.ubercab.driver", ignoreCase = true)) {
                 serviceScope.launch {
-                    // -------------------- NORMAL ACCESSIBILITY PROCESSING --------------------
+                    // Existing processing for Uber ride requests
                     if (UberParser.isValidRideRequest(detectedText)) {
                         FileLogger.log("AccessibilityService", "✔ Valid Uber Ride Request: $detectedText")
                         UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
                     } else {
-//                        FileLogger.log("AccessibilityService", "❌ Could not extract valid text from Uber overlay.")
-                        // Forward the extracted text (even if not valid) to UberParser for further decision-making.
                         UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
                     }
                 }
+
+                // ----- INSERT NEW ON-DEMAND OCR TRIGGER BELOW -----
+                if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                    event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+                    // Check if the MediaProjection is still valid before attempting capture.
+                    if (!MediaProjectionLifecycleManager.isMediaProjectionValid()) {
+                        FileLogger.log("AccessibilityService", "MediaProjection is not valid, skipping on-demand OCR capture.")
+                    } else {
+                        val currentTime = System.currentTimeMillis()
+                        // Check that at least 10 seconds have passed since the last OCR capture
+                        if (currentTime - lastOcrCaptureTime > OCR_CAPTURE_DEBOUNCE_MS) {
+                            lastOcrCaptureTime = currentTime
+                            if (!ocrCaptureInProgress) {
+                                ocrCaptureInProgress = true
+                                serviceScope.launch {
+                                    FileLogger.log("AccessibilityService", "Starting persistent on-demand OCR capture for Uber foreground.")
+                                    // Use the persistent capture function now.
+                                    val ocrResult = ScreenCaptureService.captureOcrOnDemandPersistent(this@AccessibilityService)
+                                    if (ocrResult != null) {
+                                        UberParser.processUberRideRequest(ocrResult, this@AccessibilityService)
+                                    } else {
+                                        FileLogger.log("AccessibilityService", "Persistent on-demand OCR capture returned null.")
+                                    }
+                                    ocrCaptureInProgress = false
+                                }
+                            } else {
+
+                            }
+                        } else {
+
+                        }
+                    }
+                } else {
+
+                }
+// ----- END NEW ON-DEMAND OCR TRIGGER -----
             } else {
                 if (packageName.contains("com.lyft.android.driver", ignoreCase = true)) {
                     serviceScope.launch {

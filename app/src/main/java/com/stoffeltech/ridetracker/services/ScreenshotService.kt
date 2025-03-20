@@ -89,9 +89,10 @@ object ScreenshotService {
      * @param context The application context.
      * @param rideType The ride type string used for naming the screenshot.
      */
-    @SuppressLint("ServiceCast")
+    // ----- CAPTURE FULL SCREEN SCREENSHOT - UPDATED -----
+// Captures a full-screen screenshot using the persistent capture function and saves it.
     fun captureFullScreen(context: Context, rideType: String) {
-        // ---------------- DUPLICATE SCREENSHOT PREVENTION -----------------
+        // Duplicate screenshot prevention
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastScreenshotTime < SCREENSHOT_INTERVAL_MS) {
             Log.d("ScreenshotService", "Screenshot recently taken. Skipping duplicate capture.")
@@ -101,14 +102,18 @@ object ScreenshotService {
 
         // Wait for a short delay to allow the overlay to fully render.
         Handler(Looper.getMainLooper()).postDelayed({
-            val capturedBitmap = ScreenCaptureService.lastCapturedBitmap
-            if (capturedBitmap != null) {
-                Log.d("ScreenshotService", "Capturing screenshot after delay.")
-                saveScreenshot(capturedBitmap, rideType)
-            } else {
-                Log.e("ScreenshotService", "No captured bitmap available for screenshot.")
+            // Launch a coroutine to capture a fresh bitmap using persistent resources.
+            CoroutineScope(Dispatchers.IO).launch {
+                val capturedBitmap = ScreenCaptureService.captureBitmapPersistent(context)
+                if (capturedBitmap != null) {
+                    Log.d("ScreenshotService", "Capturing screenshot after delay.")
+                    saveScreenshot(capturedBitmap, rideType)
+                } else {
+                    Log.e("ScreenshotService", "No captured bitmap available for screenshot.")
+                }
             }
         }, CAPTURE_DELAY_MS)
     }
+
     // ---------------- CAPTURE FULL SCREEN SCREENSHOT - END -----------------
 }

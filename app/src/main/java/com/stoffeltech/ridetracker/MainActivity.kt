@@ -64,6 +64,7 @@ import com.stoffeltech.ridetracker.services.ScreenCaptureService
 import com.stoffeltech.ridetracker.uber.UberApiTest
 import com.stoffeltech.ridetracker.uber.UberParser
 import com.stoffeltech.ridetracker.utils.FileLogger
+import com.stoffeltech.ridetracker.utils.LocationSender
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -185,6 +186,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         onRideFinished()
                     }
                 }
+                // === NEW: Send the current location to your site ===
+                LocationSender.sendLocation(location.latitude, location.longitude)
             }
         }
     }
@@ -212,6 +215,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // NEW: Check for an existing MediaProjection session and release it.
+        if (MediaProjectionLifecycleManager.isMediaProjectionValid()) {
+            FileLogger.log("MainActivity", "Existing MediaProjection detected at onCreate; releasing persistent capture resources and stopping MediaProjection.")
+            ScreenCaptureService.releasePersistentCapture()
+            MediaProjectionLifecycleManager.stopMediaProjection()
+        }
         setContentView(R.layout.activity_main)
 
         // Initialize FileLogger here
@@ -373,11 +382,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun requestScreenCapturePermission() {
+        // If an old MediaProjection session is still active, release it.
+        if (MediaProjectionLifecycleManager.isMediaProjectionValid()) {
+            // Release persistent capture resources (ImageReader/VirtualDisplay)
+            ScreenCaptureService.releasePersistentCapture()
+            // Stop the previous MediaProjection
+            MediaProjectionLifecycleManager.stopMediaProjection()
+        }
         val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
         val screenCaptureIntent = mediaProjectionManager.createScreenCaptureIntent()
-        // Uncomment the following line to request permission:
         screenCaptureLauncher.launch(screenCaptureIntent)
     }
+
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
@@ -434,7 +450,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
     // ---------------------- UPDATED SCREEN CAPTURE LAUNCHER ----------------------
-// This callback delays the MediaProjection start until after the FloatingOverlayService is running.
+    // This callback delays the MediaProjection start until after the FloatingOverlayService is running.
     private val screenCaptureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
     if (result.resultCode == Activity.RESULT_OK) {
         result.data?.let { data ->
@@ -447,38 +463,39 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 if (mediaProjection != null) {
                     lifecycleScope.launch(Dispatchers.IO) {
                         delay(500)
-                        ScreenCaptureService.continuouslyCaptureAndSendOcr(
-                            this@MainActivity,
-                            mediaProjection
-                        ) { ocrText ->
-                            // Use Uber's OCR logic as a template and add Lyft processing.
-                            // Identify the earliest occurrence of Uber or Lyft keywords.
-                            val uberTypes = UberParser.getRideTypes()  // Uber ride types list
-                            val lyftKeyword = "Lyft" // Basic keyword for Lyft
-                            var uberIndex = Int.MAX_VALUE
-                            // Find earliest occurrence of any Uber keyword.
-                            for (ride in uberTypes) {
-                                val idx = ocrText.indexOf(ride, ignoreCase = true)
-                                if (idx != -1 && idx < uberIndex) {
-                                    uberIndex = idx
-                                }
-                            }
-                            // Find index of the Lyft keyword.
-                            val lyftIndex = ocrText.indexOf(lyftKeyword, ignoreCase = true)
-                            var filteredText = ocrText
-                            // Dispatch based on which keyword appears first.
-                            if (lyftIndex != -1 && lyftIndex < uberIndex) {
-                                filteredText = ocrText.substring(lyftIndex)
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    com.stoffeltech.ridetracker.lyft.LyftParser.processLyftRideRequest(filteredText, this@MainActivity)
-                                }
-                            } else if (uberIndex != Int.MAX_VALUE) {
-                                filteredText = ocrText.substring(uberIndex)
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    UberParser.processUberRideRequest(filteredText, this@MainActivity)
-                                }
-                            }
-                        }
+                        ScreenCaptureService.initPersistentCapture(this@MainActivity, mediaProjection)
+//                        ScreenCaptureService.continuouslyCaptureAndSendOcr(
+//                            this@MainActivity,
+//                            mediaProjection
+//                        ) { ocrText ->
+//                            // Use Uber's OCR logic as a template and add Lyft processing.
+//                            // Identify the earliest occurrence of Uber or Lyft keywords.
+//                            val uberTypes = UberParser.getRideTypes()  // Uber ride types list
+//                            val lyftKeyword = "Lyft" // Basic keyword for Lyft
+//                            var uberIndex = Int.MAX_VALUE
+//                            // Find earliest occurrence of any Uber keyword.
+//                            for (ride in uberTypes) {
+//                                val idx = ocrText.indexOf(ride, ignoreCase = true)
+//                                if (idx != -1 && idx < uberIndex) {
+//                                    uberIndex = idx
+//                                }
+//                            }
+//                            // Find index of the Lyft keyword.
+//                            val lyftIndex = ocrText.indexOf(lyftKeyword, ignoreCase = true)
+//                            var filteredText = ocrText
+//                            // Dispatch based on which keyword appears first.
+//                            if (lyftIndex != -1 && lyftIndex < uberIndex) {
+//                                filteredText = ocrText.substring(lyftIndex)
+//                                lifecycleScope.launch(Dispatchers.IO) {
+//                                    com.stoffeltech.ridetracker.lyft.LyftParser.processLyftRideRequest(filteredText, this@MainActivity)
+//                                }
+//                            } else if (uberIndex != Int.MAX_VALUE) {
+//                                filteredText = ocrText.substring(uberIndex)
+//                                lifecycleScope.launch(Dispatchers.IO) {
+//                                    UberParser.processUberRideRequest(filteredText, this@MainActivity)
+//                                }
+//                            }
+//                        }
                     }
                     startOverlayService()
                 } else {
@@ -749,6 +766,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // Recycle and clear the last processed bitmap if it exists.
             ScreenCaptureService.lastProcessedBitmap?.recycle()
             ScreenCaptureService.lastProcessedBitmap = null
+
+            // **NEW**: Release persistent capture resources
+            ScreenCaptureService.releasePersistentCapture()
+            MediaProjectionLifecycleManager.stopMediaProjection()
         }
 
         // Only stop MediaProjection if the activity is finishing and not merely undergoing a configuration change.
@@ -760,7 +781,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             LogHelper.logDebug("MainActivity", "Activity destroyed due to configuration change; keeping MediaProjection alive.")
         }
     }
-
 
     // ============================================================
     // LOGGING SECTION
