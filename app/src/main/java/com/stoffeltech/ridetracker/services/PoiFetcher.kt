@@ -74,7 +74,7 @@ suspend fun fetchNearbyPOIs(currentLocation: LatLng, radiusMiles: Double): List<
             """.trimIndent()
 
             val url = "https://overpass-api.de/api/interpreter?data=${Uri.encode(query)}"
-            Log.d("PoiFetcher", "Fetching URL: $url")
+//            Log.d("PoiFetcher", "Fetching URL: $url")
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).awaitResponse()
             val allResults = mutableListOf<PlaceResult>()

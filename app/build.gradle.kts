@@ -79,9 +79,6 @@ dependencies {
 
     // Google Places SDK dependency providing access to POI search functionality.
 //    implementation("com.google.android.libraries.places:places:4.1.0")
-
-    implementation("com.squareup.okhttp3:okhttp:4.9.1")
-
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
 
@@ -90,32 +87,27 @@ dependencies {
     // ----- Add Firebase Cloud-based ML Kit OCR dependency -----
 //    implementation("com.google.mlkit:vision-text-recognition-cloud:16.0.0-beta3")
     // ----- ML Kit Text Recognition v2 (Unified API) -----
-    implementation("com.google.mlkit:text-recognition:16.0.0")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     implementation("com.google.mlkit:camera:16.0.0-beta3")
-
-
 
     implementation ("com.google.flogger:flogger:0.5.1")
 
     implementation ("com.google.firebase:firebase-messaging:24.1.0")
 
-    implementation("com.squareup.okhttp3:okhttp:4.11.0")
     implementation("org.json:json:20210307")
 
     // Optionally, if you want Retrofit later:
      implementation("com.squareup.retrofit2:retrofit:2.9.0")
      implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
-    implementation ("com.squareup.okhttp3:logging-interceptor:4.9.1")
-
     implementation ("androidx.cardview:cardview:1.0.0")
-    implementation ("com.squareup.okhttp3:okhttp:4.11.0")
 
     // ----- NEW: Import OkHttp dependencies -----
 // Make sure these dependencies are added in your build.gradle file:
      implementation("com.squareup.okhttp3:okhttp:4.11.0")
      implementation("com.squareup.okhttp3:logging-interceptor:4.9.3")
+
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

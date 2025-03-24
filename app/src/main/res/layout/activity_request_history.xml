@@ -9,7 +9,7 @@
     android:background="@color/black"
     android:padding="8dp">
 
-    <!-- Simple toolbar-like TextView for title -->
+    <!-- Request History Title -->
     <TextView
         android:id="@+id/tvHistoryTitle"
         android:layout_width="match_parent"
@@ -20,6 +20,108 @@
         android:gravity="center"
         android:padding="8dp" />
 
+    <!-- Horizontal container for summary information -->
+    <LinearLayout
+        android:id="@+id/llSummaryFare"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <!-- Total Fare Column -->
+        <LinearLayout
+            android:id="@+id/llTotalFare"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <!-- Label -->
+            <TextView
+                android:id="@+id/tvTotalFareLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Total Fare"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:gravity="center" />
+
+            <!-- Value -->
+            <TextView
+                android:id="@+id/tvTotalFareValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$0.00"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <!-- Fare per Mile Column -->
+        <LinearLayout
+            android:id="@+id/llFarePerMile"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <!-- Label -->
+            <TextView
+                android:id="@+id/tvFarePerMileLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Fare/Mile"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:gravity="center" />
+
+            <!-- Value -->
+            <TextView
+                android:id="@+id/tvFarePerMileValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$0.00"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <!-- Fare per Hour Column -->
+        <LinearLayout
+            android:id="@+id/llFarePerHour"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <!-- Label -->
+            <TextView
+                android:id="@+id/tvFarePerHourLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Fare/Hour"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:gravity="center" />
+
+            <!-- Value -->
+            <TextView
+                android:id="@+id/tvFarePerHourValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$0.00"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+
+
     <!-- RecyclerView to display the list of requests -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvHistory"
@@ -29,16 +131,37 @@
         android:divider="@android:color/darker_gray"
         android:dividerHeight="1dp" />
 
-    <!-- Button to clear data, if you want that feature -->
-    <Button
-        android:id="@+id/btnClearHistory"
+    <!--- Modified activity_request_history.xml - Buttons Layout -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="CLEAR DATA"
-        android:textAllCaps="false"
-        android:background="@color/black"
-        android:textColor="@android:color/white"
+        android:orientation="horizontal"
         android:layout_marginTop="8dp"
-        android:layout_marginBottom="8dp" />
+        android:layout_marginBottom="8dp">
+
+        <!-- CLEAR DATA button -->
+        <Button
+            android:id="@+id/btnClearHistory"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="CLEAR DATA"
+            android:textAllCaps="false"
+            android:background="@color/black"
+            android:textColor="@android:color/white" />
+
+        <!-- EXPORT button -->
+        <Button
+            android:id="@+id/btnExportHistory"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="EXPORT"
+            android:textAllCaps="false"
+            android:background="@color/black"
+            android:textColor="@android:color/white"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
 
 </LinearLayout>

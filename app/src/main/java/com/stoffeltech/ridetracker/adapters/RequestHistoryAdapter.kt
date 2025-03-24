@@ -1,7 +1,9 @@
 package com.stoffeltech.ridetracker.adapters
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Color
+import android.preference.PreferenceManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -9,6 +11,8 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.stoffeltech.ridetracker.R
 import com.stoffeltech.ridetracker.services.RideInfo
+import com.stoffeltech.ridetracker.SettingsActivity
+import com.stoffeltech.ridetracker.uber.UberParser
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -59,67 +63,73 @@ class RequestHistoryAdapter(
         // Pickup + Dropoff info
         private val tvPickupInfo: TextView = itemView.findViewById(R.id.tvPickupInfo)
         private val tvDropoffInfo: TextView = itemView.findViewById(R.id.tvDropoffInfo)
-
         private val tvPickupLocation: TextView = itemView.findViewById(R.id.tvPickupLocation)
         private val tvDropoffLocation: TextView = itemView.findViewById(R.id.tvDropoffLocation)
-
 
         // Extras: bonuses, stops, etc.
         private val tvExtras: TextView = itemView.findViewById(R.id.tvExtras)
 
-        // Format date/time if RideInfo has a timestamp
+        // Format date/time if RideInfo has a timestamp.
         private val dateFormat = SimpleDateFormat("MM/dd/yyyy hh:mm a", Locale.getDefault())
 
         @SuppressLint("SetTextI18n", "DefaultLocale")
         fun bind(ride: RideInfo) {
-            // ========== 1) Ride Type + Timestamp (no slash) ==========
+            // ========== 1) Ride Type + Timestamp ==========
             tvRideType.text = ride.rideType ?: "Unknown"
-
-            // If you store a timestamp in RideInfo, use it:
-            val timeStamp = if (ride.timestamp > 0) {
-                dateFormat.format(Date(ride.timestamp))
-            } else {
-                // fallback if no timestamp
-                ""
-            }
+            val timeStamp = if (ride.timestamp > 0) dateFormat.format(Date(ride.timestamp)) else ""
             tvTimestamp.text = timeStamp
 
-            // ========== 2) Passenger Rating (with color + verified + rider name if Lyft) ==========
-            // Suppose you store a boolean `verified` somewhere; or check if rating was verified
-            // If you have "verified" in ride or not, adapt accordingly:
-            var ratingText = ""
-            if (ride.rating != null) {
-                ratingText += String.format("%.2f", ride.rating)
-            } else {
-                ratingText += "--"
-            }
-//            // If verified
-//            if (ride.isVerified) {
-//                ratingText += " (Verified)"
-//            }
-            // If Lyft + riderName is not blank, add it
-            if ((ride.rideType?.contains("Lyft", ignoreCase = true) == true) &&
-                !ride.riderName.isNullOrEmpty()) {
-                ratingText += " -  ${ride.riderName}"
+            // ========== 2) Passenger Rating ==========
+            var ratingText = if (ride.rating != null) String.format("%.2f", ride.rating) else "--"
+            if ((ride.rideType?.contains("Lyft", ignoreCase = true) == true) && !ride.riderName.isNullOrEmpty()) {
+                ratingText += " - ${ride.riderName}"
             }
             tvRating.text = ratingText
-
-            // Apply color logic for rating
-            // Example thresholds from your overlay code
-            val ratingThreshold = 4.70f
-            val ratingColor = if ((ride.rating ?: 0.0) >= ratingThreshold) Color.GREEN else Color.RED
+            val defaultRatingThreshold = 4.70f
+            val ratingColor = if ((ride.rating ?: 0.0) >= defaultRatingThreshold) Color.GREEN else Color.RED
             tvRating.setTextColor(ratingColor)
 
-            // ========== 3) Price + Profit (color-coded) ==========
-            // If you want the same thresholds from your overlay, replicate them here or store them
-            val fare = ride.fare ?: 0.0
-            // Suppose you also store finalFare or bonus, do that logic:
-            // For simplicity, let's assume "finalFare = ride.fare"
-            val finalFare = fare
+            // ========== Load Threshold Settings Based on Ride Type ==========
+            val context = itemView.context
+            var fareLow: Double
+            var fareHigh: Double
+            var acceptMile: Float
+            var declineMile: Float
+            var acceptHour: Float
+            var declineHour: Float
 
-            // Basic color logic from overlay:
-            val fareLow = 5.0
-            val fareHigh = 10.0
+            if (ride.rideType != null && UberParser.getRideTypes().any { it.equals(ride.rideType, ignoreCase = true) }) {
+                val uberPrefs = context.getSharedPreferences("uber_prefs", Context.MODE_PRIVATE)
+                fareLow = uberPrefs.getFloat("pref_fare_low", 5.0f).toDouble()
+                fareHigh = uberPrefs.getFloat("pref_fare_high", 10.0f).toDouble()
+                acceptMile = uberPrefs.getFloat("pref_accept_mile", 1.0f)
+                declineMile = uberPrefs.getFloat("pref_decline_mile", 0.75f)
+                acceptHour = uberPrefs.getFloat("pref_accept_hour", 25.0f)
+                declineHour = uberPrefs.getFloat("pref_decline_hour", 20.0f)
+            } else if (ride.rideType?.contains("Lyft", ignoreCase = true) == true) {
+                val lyftPrefs = context.getSharedPreferences("lyft_prefs", Context.MODE_PRIVATE)
+                fareLow = lyftPrefs.getFloat("pref_fare_low", 5.0f).toDouble()
+                fareHigh = lyftPrefs.getFloat("pref_fare_high", 10.0f).toDouble()
+                acceptMile = lyftPrefs.getFloat("pref_accept_mile", 1.0f)
+                declineMile = lyftPrefs.getFloat("pref_decline_mile", 0.75f)
+                acceptHour = lyftPrefs.getFloat("pref_accept_hour", 25.0f)
+                declineHour = lyftPrefs.getFloat("pref_decline_hour", 20.0f)
+            } else {
+                fareLow = 5.0
+                fareHigh = 10.0
+                acceptMile = 1.0f
+                declineMile = 0.75f
+                acceptHour = 25.0f
+                declineHour = 20.0f
+            }
+
+            // Load cost of driving from main settings
+            val mainPrefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val costDriving = mainPrefs.getFloat(SettingsActivity.KEY_COST_DRIVING, 0.5f)
+
+            // ========== 3) Price + Profit ==========
+            val fare = ride.fare ?: 0.0
+            val finalFare = fare // You may adjust this if needed.
             val fareColor = when {
                 finalFare < fareLow -> Color.RED
                 finalFare < fareHigh -> Color.YELLOW
@@ -128,33 +138,26 @@ class RequestHistoryAdapter(
             tvPrice.text = "$%.2f".format(finalFare)
             tvPrice.setTextColor(fareColor)
 
-            // Profit - you might store it in ride or compute it
-            // For now let's do a simple guess
-            val drivingCost = 0.20 * (ride.tripDistance ?: (0.0 + ride.pickupDistance!!) ?: 0.0)
+            val totalMiles = (ride.pickupDistance ?: 0.0) + (ride.tripDistance ?: 0.0)
+            val drivingCost = costDriving * totalMiles
             val profit = finalFare - drivingCost
             val profitColor = if (profit >= 0) Color.GREEN else Color.RED
 
             tvProfitLoss.text = "$%.2f".format(profit)
             tvProfitLoss.setTextColor(profitColor)
 
-            // ========== 4) Price per Mile + Price per Hour (color-coded) ==========
-            val totalMiles = (ride.pickupDistance ?: 0.0) + (ride.tripDistance ?: 0.0)
-            val totalMinutes = (ride.pickupTime ?: 0.0) + (ride.tripTime ?: 0.0)
+            // ========== 4) Price per Mile + Price per Hour ==========
+            val pickupTime = ride.pickupTime ?: 0.0
+            val tripTime = ride.tripTime ?: 0.0
+            val totalMinutes = pickupTime + tripTime
             val pricePerMile = if (totalMiles > 0) finalFare / totalMiles else 0.0
             val pricePerHour = if (totalMinutes > 0) finalFare / (totalMinutes / 60.0) else 0.0
 
-            // Suppose acceptMile=1.0, declineMile=0.75, etc.
-            val acceptMile = 1.0
-            val declineMile = 0.75
             val mileColor = when {
                 pricePerMile < declineMile -> Color.RED
                 pricePerMile < acceptMile -> Color.YELLOW
                 else -> Color.GREEN
             }
-
-            // Suppose acceptHour=25.0, declineHour=20.0
-            val acceptHour = 25.0
-            val declineHour = 20.0
             val hourColor = when {
                 pricePerHour < declineHour -> Color.RED
                 pricePerHour < acceptHour -> Color.YELLOW
@@ -183,7 +186,6 @@ class RequestHistoryAdapter(
             tvDropoffInfo.text = dropoffTxt
             tvDropoffLocation.text = dropoffLoc
 
-
             // ========== 8) Extras: bonus, stops, etc. ==========
             val extras = StringBuilder()
             if (!ride.bonuses.isNullOrBlank()) {
@@ -197,6 +199,17 @@ class RequestHistoryAdapter(
             } else {
                 tvExtras.visibility = View.VISIBLE
                 tvExtras.text = extras.toString().trim().trimEnd(',')
+            }
+
+            // ========== 9) Additional Fields ==========
+            if (!ride.requestStatus.isNullOrBlank()) {
+                tvExtras.append("\nStatus: ${ride.requestStatus}")
+            }
+            if (!ride.riderName.isNullOrBlank()) {
+                tvExtras.append("\nRider: ${ride.riderName}")
+            }
+            if (!ride.rideSubtype.isNullOrBlank()) {
+                tvExtras.append("\nSubtype: ${ride.rideSubtype}")
             }
         }
     }

@@ -17,6 +17,7 @@ data class RideInfo(
     val rideSubtype: String? = null,
     val bonuses: String? = null,
     val isExclusive: Boolean,
-    val riderName: String? = null,
+    var riderName: String? = null,
+    var requestStatus: String? = null,   // NEW: "Accepted" or "Declined"
     val timestamp: Long = System.currentTimeMillis()
 )

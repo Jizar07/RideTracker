@@ -10,7 +10,6 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.stoffeltech.ridetracker.lyft.LyftParser
 import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager
-import com.stoffeltech.ridetracker.services.ScreenCaptureService.continuouslyCaptureAndSendOcr
 import com.stoffeltech.ridetracker.uber.UberParser
 import com.stoffeltech.ridetracker.utils.FileLogger
 import com.stoffeltech.ridetracker.utils.RevenueTracker
@@ -24,6 +23,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
+import com.stoffeltech.ridetracker.services.HistoryManager
+import com.stoffeltech.ridetracker.services.RideInfo
 
 /**
  * AccessibilityService implementation that provides basic permissions and text extraction.
@@ -52,6 +53,49 @@ class AccessibilityService : AccessibilityService() {
         private const val OCR_CAPTURE_DEBOUNCE_MS = 2000L
     }
 
+    // ---------------- NEW: PENDING REQUEST VARIABLES ----------------
+    // Temporarily holds a pending Uber ride request.
+    private var pendingUberRideRequest: RideInfo? = null
+    // Job that was previously used to trigger a timeout (decline), now unused.
+    private var pendingRequestTimeoutJob: Job? = null
+    // Constant for the pending request timeout duration (10 seconds) – not used for auto-decline.
+    private val PENDING_REQUEST_TIMEOUT_MS = 10000L
+
+    // Helper function to extract the rider's name from the detected text.
+    // It does the following:
+    // 1. Finds the text after "Picking up".
+    // 2. Splits the remainder by whitespace.
+    // 3. If the first token is too long, attempts to split it at a lowercase-to-uppercase transition.
+    // 4. If a second token is present and short, combines it with the first token.
+    private fun extractRiderName(detectedText: String): String {
+        val index = detectedText.indexOf("Picking up", ignoreCase = true)
+        if (index == -1) return "Unknown"
+        val remaining = detectedText.substring(index + "Picking up".length).trim()
+        if (remaining.isEmpty()) return "Unknown"
+
+        // Split the remaining text by whitespace.
+        val parts = remaining.split("\\s+".toRegex()).filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return "Unknown"
+
+        // Process the first token.
+        var firstToken = parts[0]
+        // If the first token is long, attempt to insert a space at a lowercase-to-uppercase boundary.
+        if (firstToken.length > 6) {
+            val splitToken = firstToken.replace(Regex("(?<=[a-z])(?=[A-Z])"), " ").split(" ")
+            if (splitToken.isNotEmpty()) {
+                firstToken = splitToken.first()
+            }
+        }
+
+        // If there's a second token that is reasonably short, combine it with the first token.
+        return if (parts.size >= 2 && parts[1].length <= 8) {
+            "$firstToken ${parts[1]}"
+        } else {
+            firstToken
+        }
+    }
+
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     // -------------------- NULL CHECK --------------------
         event?.let {
@@ -62,7 +106,7 @@ class AccessibilityService : AccessibilityService() {
             val detectedText = extractTextFromNode(event.source).ifBlank { event.text.joinToString(" ") }
 
             // --- ADDED LOG: Print the extracted text for debugging ---
-            //            FileLogger.log("AccessibilityService", "Extracted text from event: $detectedText")   // ------------------------------------------------------------------ SHOW LOG FROM ACC EXTRACTED TEXT
+                        FileLogger.log("AccessibilityService", "Extracted text from event: $detectedText")   // ------------------------------------------------------------------ SHOW LOG FROM ACC EXTRACTED TEXT
 
             // ---------------- SPECIFIC EARNINGS EXTRACTION -----------------
             // Look for the specific earnings string following "TODAY"
@@ -99,17 +143,49 @@ class AccessibilityService : AccessibilityService() {
 
             // -------------------- PROCESS EVENTS FROM UBER'S APP --------------------
             // ----- Existing Uber processing block -----
-//            if (packageName.contains("com.ubercab.driver", ignoreCase = true) || packageName.contains("com.google.android.apps.nbu.files", ignoreCase = true)) {
+            if (packageName.contains("com.ubercab.driver", ignoreCase = true) || packageName.contains("com.google.android.apps.nbu.files", ignoreCase = true)) {
 
-            if (packageName.contains("com.ubercab.driver", ignoreCase = true)) {
+//            if (packageName.contains("com.ubercab.driver", ignoreCase = true)) {
                 serviceScope.launch {
+                    // First, check if the detected text is an acceptance event ("Picking up")
+                    if (detectedText.contains("Picking up", ignoreCase = true)) {
+                        // Cancel any pending timeout so we don't later mark it as Declined.
+                        pendingRequestTimeoutJob?.cancel()
+                        pendingRequestTimeoutJob = null
+                        val riderName = extractRiderName(detectedText)
+                        if (pendingUberRideRequest != null) {
+                            // Update the pending request to Accepted.
+                            pendingUberRideRequest!!.requestStatus = "Accepted"
+                            pendingUberRideRequest!!.riderName = riderName
+                            HistoryManager.addRideRequest(pendingUberRideRequest!!, applicationContext)
+                            FileLogger.log("AccessibilityService", "Pending Uber Ride Request accepted with rider: $riderName")
+                            pendingUberRideRequest = null
+                        } else {
+                            // If no pending request exists, create a new one as Accepted.
+                            val rideInfo = UberParser.parse(detectedText)
+                            if (rideInfo != null) {
+                                rideInfo.requestStatus = "Accepted"
+                                rideInfo.riderName = riderName
+                                HistoryManager.addRideRequest(rideInfo, applicationContext)
+                                FileLogger.log("AccessibilityService", "Directly processed accepted Uber ride request with rider: $riderName")
+                            }
+                        }
+                        return@launch
+                    }
                     // Existing processing for Uber ride requests
                     if (UberParser.isValidRideRequest(detectedText)) {
-                        FileLogger.log("AccessibilityService", "✔ Valid Uber Ride Request: $detectedText")
-                        UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
-                    } else {
-                        UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
+                        if (pendingUberRideRequest == null) {
+                            pendingUberRideRequest = UberParser.parse(detectedText)
+                            // Instead of starting a timeout to auto-decline, we simply store the pending request.
+                        } else {
+                            FileLogger.log("DebugPending", "Pending ride request already exists; ignoring new valid request")
+                        }
+                        return@launch
                     }
+                    // ---------------- END UPDATED PENDING REQUEST LOGIC ----------------
+
+                    // For events that do not match pending logic, process as usual.
+                    UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
                 }
 
                 // ----- INSERT NEW ON-DEMAND OCR TRIGGER BELOW -----
@@ -236,7 +312,6 @@ class AccessibilityService : AccessibilityService() {
 //            LyftParser.processLyftRideRequest(testLyftText, this@AccessibilityService)
 //        }
         // ----- END: Debug Simulation for Lyft Ride Request -----
-
     }
 
     override fun onInterrupt() {

@@ -44,8 +44,6 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
-//import com.google.android.libraries.places.api.Places
-//import com.google.android.libraries.places.api.net.PlacesClient
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.stoffeltech.ridetracker.uber.UberActivity
@@ -337,10 +335,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mapFragment.getMapAsync(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-//        if (!Places.isInitialized()) {
-//            Places.initialize(applicationContext, BuildConfig.GOOGLE_PLACES_API_KEY)
-//        }
-//        placesClient = Places.createClient(this)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
@@ -679,9 +673,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             ivModeSwitch.setImageResource(R.drawable.ic_sun)
         }
-        UberApiTest.fetchCurrentRideRequest(this) { rideInfoString ->
-            Log.d("MainActivity", "API call result: $rideInfoString")
-        }
+//        UberApiTest.fetchCurrentRideRequest(this) { rideInfoString ->
+//            Log.d("MainActivity", "API call result: $rideInfoString")
+//        }
     }
 
     override fun onPause() {

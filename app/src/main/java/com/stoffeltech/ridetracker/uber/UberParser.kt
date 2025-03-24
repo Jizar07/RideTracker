@@ -45,9 +45,6 @@ private var lastInvalidRequestTime: Long = 0
 // ----- Global throttle for invalid ride request logs -----
 private var lastGlobalInvalidRequestTime: Long = 0
 
-
-
-
 object UberParser {
     // ---------------- LAST VALID REQUEST TIMESTAMP -----------------
     var lastValidRequestTime: Long = 0
@@ -107,10 +104,9 @@ object UberParser {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)  // Launches the app.
         } else {
-            FileLogger.log("UberParser", "Uber Driver app not found on device.")
+//            FileLogger.log("UberParser", "Uber Driver app not found on device.")
         }
     }
-
 
     /**
      * Replaces all 'l'/'L' with '1' except if the entire substring is exactly "total".
@@ -250,13 +246,14 @@ object UberParser {
         sb.appendLine("11) Action Button: $actionButton")
 
         // Debug example:
-        // FileLogger.log("UberRideRequest", sb.toString())
+         FileLogger.log("UberRideRequest", sb.toString())
     }
 
     fun getRideTypes(): List<String> = rideTypes
 
     // ---------------- FOCUSED CHANGE: REPLACE L in fare/time/distance STRINGS ----------------
     fun parse(cleanedText: String): RideInfo? {
+
         // Create a list to collect anomaly messages
         val anomalyMessages = mutableListOf<String>()  // ----- ANOMALY: Collect messages -----
 
@@ -378,7 +375,50 @@ object UberParser {
             pickupLocation = addressPattern.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
             dropoffLocation = pickupLocation
         } else {
-            // --- For Ride requests, use the ride-specific extraction ---
+
+            // For pickup location: capture all lines between the line that contains "away" and the line that contains "trip"
+            try {
+                val lines = text.lines().map { it.trim() }
+                val awayIndex = lines.indexOfFirst { it.contains("away", ignoreCase = true) }
+                // Find the first occurrence of a line containing "trip" after the "away" line.
+                val tripIndex = lines.indexOfFirst { it.contains("trip", ignoreCase = true) && lines.indexOf(it) > awayIndex }
+                if (awayIndex != -1 && tripIndex != -1 && tripIndex > awayIndex) {
+                    // Extract lines between the "away" and "trip" markers.
+                    val candidateLines = lines.subList(awayIndex + 1, tripIndex)
+                        .filter { it.isNotEmpty() && it != "X" }
+                    pickupLocation = if (candidateLines.isNotEmpty()) candidateLines.joinToString(" ") else "N/A"
+                } else {
+                    pickupLocation = "N/A"
+                }
+            } catch (e: Exception) {
+                FileLogger.log("UberParser", "Error extracting pickup location: ${e.message}")
+                pickupLocation = "N/A"
+            }
+
+
+            // For dropoff location: capture all lines between "trip" and "Accept/Match"
+            try {
+                val lines = text.lines().map { it.trim() }
+                val tripIndex = lines.indexOfFirst { it.contains("trip", ignoreCase = true) }
+                // Find the first occurrence of "Accept" or "Match" after the trip line
+                val actionIndex = lines.indexOfFirst {
+                    (it.equals("Accept", ignoreCase = true) || it.equals("Match", ignoreCase = true))
+                            && lines.indexOf(it) > tripIndex
+                }
+                if (tripIndex != -1 && actionIndex != -1 && actionIndex > tripIndex) {
+                    // Extract lines between tripIndex and actionIndex
+                    val candidateLines = lines.subList(tripIndex + 1, actionIndex)
+                        .filter { it.isNotEmpty() && !it.equals("X", ignoreCase = true) }
+                    dropoffLocation = if (candidateLines.isNotEmpty()) candidateLines.joinToString(" ") else "N/A"
+                } else {
+                    dropoffLocation = "N/A"
+                }
+            } catch (e: Exception) {
+                FileLogger.log("UberParser", "Error extracting dropoff location: ${e.message}")
+                dropoffLocation = "N/A"
+            }
+
+
             val pickupInfoRegex = Regex("([lL\\d]+)\\s*mins?\\s*\\(([lL\\d]+(?:\\.[lL\\d]+)?)\\s*mi\\)\\s*away", RegexOption.IGNORE_CASE)
             val pickupMatch = pickupInfoRegex.find(text)
 
@@ -396,9 +436,6 @@ object UberParser {
                 anomalyMessages.add("Unrealistic pickupDistance detected: $pickupDistance mi. Adjusting by dividing by 10.") // ----- ANOMALY: PickupDistance -----
                 pickupDistance = pickupDistance / 10.0
             }
-
-            val pickupLocationRegex = Regex("away\\s*([^\\d]+?)\\s*\\d+\\s*mins", RegexOption.IGNORE_CASE)
-            pickupLocation = pickupLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
 
             val tripInfoRegex = Regex("([lL\\d]+)\\s*mins?\\s*\\(([lL\\d]+(?:\\.[lL\\d]+)?)\\s*mi\\)\\s*trip", RegexOption.IGNORE_CASE)
             val tripMatch = tripInfoRegex.find(text)
@@ -418,9 +455,6 @@ object UberParser {
                     tripDistance = tripDistance / 10.0
                 }
             }
-
-            val dropoffLocationRegex = Regex("trip\\s*(.*?)\\s*(Accept|Match)", RegexOption.IGNORE_CASE)
-            dropoffLocation = dropoffLocationRegex.find(text)?.groupValues?.get(1)?.trim() ?: "N/A"
         }
 
         // --- Extract Action Button ---
@@ -441,8 +475,8 @@ object UberParser {
             if (!rideType.contains("Delivery", ignoreCase = true) && tripTime == null) missingFields.add("tripTime")
 
             // Build the error message including missing fields, the raw text, and any anomaly messages
-            val errorMsg = "Invalid ride request. Missing fields: ${missingFields.joinToString(", ")}. Raw text: $text. " +
-                    if (anomalyMessages.isNotEmpty()) "Anomalies: ${anomalyMessages.joinToString("; ")}" else ""
+//            val errorMsg = "Invalid ride request. Missing fields: ${missingFields.joinToString(", ")}. Raw text: $text. " +
+//                    if (anomalyMessages.isNotEmpty()) "Anomalies: ${anomalyMessages.joinToString("; ")}" else ""
 
             val currentTime = System.currentTimeMillis()
             // Throttle logging: if an invalid log has been produced within the last 30 seconds, skip logging.
@@ -450,7 +484,7 @@ object UberParser {
                 return null
             }
             lastGlobalInvalidRequestTime = currentTime
-            FileLogger.log("UberParser", errorMsg)
+//            FileLogger.log("UberParser", errorMsg)
             return null
         }
 
@@ -514,7 +548,7 @@ object UberParser {
         // Parse the prepared text to extract ride information
         val rideInfo = parse(preparedText)
         if (rideInfo == null) {
-            FileLogger.log("UberParser", "Parsed ride info is null. Raw text: $preparedText")
+//            FileLogger.log("UberParser", "Parsed ride info is null. Raw text: $preparedText")
             return
         }
 
@@ -540,6 +574,14 @@ object UberParser {
         rideSubtype = ${rideInfo.rideSubtype},
         bonuses = ${rideInfo.bonuses}
     """.trimIndent())
+//        // Start the headless WebView service if it's not already running.
+//        val serviceIntent = Intent(context, UberEstimateService::class.java)
+//        context.startService(serviceIntent)
+//        Log.d("UberParser", "UberEstimateService started.")
+//        // Now call the injection logic:
+//        UberEstimateService.instance?.injectFormData(rideInfo.pickupLocation ?: "", rideInfo.tripLocation ?: "")
+
+
 
         // Extract ride details for calculations
         val fareVal = rideInfo.fare ?: 0.0
@@ -661,7 +703,7 @@ object UberParser {
             weightFare = 0.34f             // Weight for fare price
         )
 
-// Call the new updateScore companion function to update the ride score on the overlay.
+        // Call the new updateScore companion function to update the ride score on the overlay.
         com.stoffeltech.ridetracker.services.FloatingOverlayService.updateScore(
             actualPMile = pricePerMile.toFloat(),   // Actual price per mile computed earlier.
             actualPHour = pricePerHour.toFloat(),    // Actual price per hour computed earlier.

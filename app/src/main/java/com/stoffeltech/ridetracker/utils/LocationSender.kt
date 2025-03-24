@@ -41,7 +41,7 @@ object LocationSender {
                         throw IOException("Unexpected response code: $response")
                     }
                     // Optionally process the response
-                    println("Location update response: ${response.body?.string()}")
+//                    println("Location update response: ${response.body?.string()}")
                 }
             }
         })

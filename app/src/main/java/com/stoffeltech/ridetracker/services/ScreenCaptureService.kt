@@ -129,7 +129,7 @@ object ScreenCaptureService {
      * ---------------- RUN OCR ON BITMAP - START ----------------
      * Processes the provided bitmap using ML Kit's OCR and returns the extracted text.
      */
-    suspend fun runOcrOnBitmap(bitmap: Bitmap): String? {
+    private suspend fun runOcrOnBitmap(bitmap: Bitmap): String? {
         return withContext(Dispatchers.Default) {
             try {
                 val startTime = System.currentTimeMillis()  // --- PROFILE: Start time ---
@@ -137,312 +137,14 @@ object ScreenCaptureService {
                 // Use our fresh (or reinitialized) detector
                 val result = getTextRecognizer().process(image).await()
                 val duration = System.currentTimeMillis() - startTime  // --- PROFILE: End time ---
-                result.text
+                val rawText = result.text  // Capture the raw OCR text
+                // Log the raw OCR text for debugging purposes
+//                FileLogger.log("ScreenCaptureService", "Raw OCR text captured: $rawText")
+                rawText  // Return the captured text
             } catch (e: Exception) {
                 FileLogger.log("ScreenCaptureService", "Error during OCR processing: ${e.message}")
                 null
             }
-        }
-    }
-
-
-
-    /**
-     * Continuously captures frames for OCR and sends the captured texts to the provided callback.
-     * This function creates a single VirtualDisplay and ImageReader, then enters a loop capturing frames.
-     * For each frame, OCR is run and if non-blank text is extracted, the callback is invoked.
-     *
-     * @param context The application context.
-     * @param mediaProjection A valid MediaProjection instance.
-     * @param captureIntervalMillis Interval between captures in milliseconds (default 500ms).
-     * @param ocrCallback Callback function to receive each captured OCR text.
-     * ---------------- CONTINUOUS OCR CAPTURE & SEND - END ----------------
-     */
-    @SuppressLint("SuspiciousIndentation")
-    suspend fun continuouslyCaptureAndSendOcr(
-        context: Context,
-        mediaProjection: MediaProjection,
-        captureIntervalMillis: Long = 500,
-        ocrCallback: (String) -> Unit
-    ) {
-        // -------------------- SET UP HANDLER THREAD --------------------
-        val handlerThread = HandlerThread("ContinuousOcrSendThread")
-        handlerThread.start()
-        val handler = Handler(handlerThread.looper)
-        // -----------------------------------------------------------------
-
-        // -------------------- GET SCREEN DIMENSIONS --------------------
-        val metrics = context.resources.displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        // -----------------------------------------------------------------
-
-        // -------------------- CREATE IMAGE READER --------------------
-        val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        // -----------------------------------------------------------------
-
-        // -------------------- CREATE VIRTUAL DISPLAY --------------------
-        var virtualDisplay = mediaProjection.createVirtualDisplay(
-            "ContinuousOcrSendDisplay",
-            width,
-            height,
-            metrics.densityDpi,
-            0,
-            imageReader.surface,
-            null,
-            handler
-        )
-
-        var attempts = 0
-        val maxAttempts = 10
-        while (virtualDisplay == null && attempts < maxAttempts) {
-            FileLogger.log("ScreenCaptureService", "VirtualDisplay not ready. Attempt ${attempts + 1} of $maxAttempts. Retrying in 750ms...")
-            delay(750) // wait 750ms before retrying
-            virtualDisplay = mediaProjection.createVirtualDisplay(
-                "ContinuousOcrSendDisplay",
-                width,
-                height,
-                metrics.densityDpi,
-                0,
-                imageReader.surface,
-                null,
-                handler
-            )
-            attempts++
-        }
-
-        if (virtualDisplay == null) {
-            FileLogger.log("ScreenCaptureService", "VirtualDisplay creation failed after $maxAttempts attempts; aborting capture.")
-            handlerThread.quitSafely()
-            return
-        }
-        // -----------------------------------------------------------------
-
-        try {
-            val bitmapChannel = Channel<Bitmap?>(capacity = Channel.CONFLATED)
-            // ---- Add a counter for consecutive timeouts ----
-            var consecutiveTimeouts = 0
-
-        val imageListener = ImageReader.OnImageAvailableListener { reader ->
-            reader.acquireLatestImage()?.let { image ->
-                try {
-                    val plane = image.planes[0]
-                    val buffer = plane.buffer
-                    val pixelStride = plane.pixelStride
-                    val rowStride = plane.rowStride
-                    val rowPadding = rowStride - pixelStride * width
-
-                    val fullBitmap = Bitmap.createBitmap(
-                        width + rowPadding / pixelStride,
-                        height,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    fullBitmap.copyPixelsFromBuffer(buffer)
-
-                    val resultBitmap = ocrRoi?.let { rect ->
-                        Bitmap.createBitmap(fullBitmap, rect.left, rect.top, rect.width(), rect.height()).also {
-                            fullBitmap.recycle()
-                        }
-                    } ?: fullBitmap
-
-                    // *** Add this line to update the global lastCapturedBitmap ***
-                    lastCapturedBitmap = resultBitmap
-
-                    bitmapChannel.trySend(resultBitmap)
-
-                } catch (e: Exception) {
-                    FileLogger.log("ScreenCaptureService", "Error processing image: ${e.message}")
-                    bitmapChannel.trySend(null)
-                } finally {
-                    image.close()
-                }
-            }
-        }
-
-        imageReader.setOnImageAvailableListener(imageListener, handler)
-
-        while (coroutineContext.isActive) {
-
-            // If an OCR task is already running, skip this iteration
-            if (!isOcrProcessing.compareAndSet(false, true)) {
-                delay(captureIntervalMillis)
-                continue
-            }
-            val captureStart = System.currentTimeMillis()  // --- PROFILE: Capture start ---
-            val capturedBitmap = withTimeoutOrNull(2000) { bitmapChannel.receive() }
-            val captureDuration = System.currentTimeMillis() - captureStart
-
-            // FileLogger.log("ScreenCaptureService", "Bitmap capture time: $captureDuration ms")
-
-            if (capturedBitmap == null) {
-                FileLogger.log("ScreenCaptureService", "Bitmap capture timed out or failed.")
-                consecutiveTimeouts++  // Increment timeout counter
-                if (consecutiveTimeouts >= 3) {
-                    sendCaptureTimeoutNotification(context)
-                    consecutiveTimeouts = 0  // Reset counter after notification
-                }
-                isOcrProcessing.set(false)  // Reset flag to allow future processing
-                delay(captureIntervalMillis)
-                continue
-            } else {
-                consecutiveTimeouts = 0  // Reset counter on successful capture
-            }
-            // ----- STEP 3C: Skip OCR if the captured frame is similar to the last processed frame -----
-            // This helps reduce redundant OCR processing when consecutive frames are nearly identical.
-            if (lastProcessedBitmap != null && areBitmapsSimilar(lastProcessedBitmap!!, capturedBitmap)) {
-//                FileLogger.log("ScreenCaptureService", "Captured frame similar to previous; skipping OCR.")
-                isOcrProcessing.set(false)  // Reset the processing flag
-                delay(captureIntervalMillis)
-                continue
-            }
-
-            // ---- CONVERT THE CAPTURED BITMAP TO GRAYSCALE ----
-            val grayscaleBitmap = toGrayscale(capturedBitmap)
-
-
-            // Process OCR using the grayscale bitmap
-            val ocrResult = runOcrOnBitmap(grayscaleBitmap)
-                // Use the ocrResult for your ride processing logic here...
-
-            isOcrProcessing.set(false)  // Reset the flag after processing is complete
-            delay(captureIntervalMillis)
-
-            // ---------------------------------------------------------------
-            // 1) Quick full-screen OCR to see if it's Lyft or Uber
-            // ---------------------------------------------------------------
-            val fullScreenImage = InputImage.fromBitmap(capturedBitmap, 0)
-            // Removed creation of new recognizer and use the cached textRecognizer instead
-            val fullScreenResult = try {
-                getTextRecognizer().process(fullScreenImage).await()
-            } catch (e: Exception) {
-                FileLogger.log("ScreenCaptureService", "Error during quick OCR: ${e.message}")
-                null
-            }
-
-            val fullText = fullScreenResult?.text ?: ""
-            val isLyft = fullText.contains("Lyft", ignoreCase = true) // or "Lyft request"
-            val isUber = UberParser.isValidRideRequest(fullText) // quick check from your parser
-
-            // ---------------------------------------------------------------
-            // 2) If boundingBoxLockActive is false, find the top for bounding box
-            //    - For Uber: ride type top
-            //    - For Lyft: fare price top
-            // ---------------------------------------------------------------
-            var finalTop: Int? = null
-            if (!boundingBoxLockActive) {
-                // We'll do a small pass to see if it's Lyft or Uber
-                var uberRideTypeTop: Int? = null
-                var lyftFareTop: Int? = null
-
-                if (fullScreenResult != null) {
-                    // NEW: We'll skip blocks that have these keywords
-                    val ignoreRegex = Regex("(incl|bonus|est\\.|/hr|rate)", RegexOption.IGNORE_CASE)
-                    // Regex for a normal fare line
-                    val lyftFareRegex = Regex("\\$(\\d+\\.\\d{2})", RegexOption.IGNORE_CASE)
-
-                    for (block in fullScreenResult.textBlocks) {
-                        val blockText = block.text
-                        val box = block.boundingBox ?: continue
-
-                        // Skip lines with these keywords for Lyft bounding box
-                        if (ignoreRegex.containsMatchIn(blockText)) {
-                            continue
-                        }
-
-                        // Uber bounding box
-                        val uberRideTypes = UberParser.getRideTypes()
-                        for (ride in uberRideTypes) {
-                            if (blockText.contains(ride, ignoreCase = true)) {
-                                if (uberRideTypeTop == null || box.top < uberRideTypeTop) {
-                                    uberRideTypeTop = box.top
-                                }
-                            }
-                        }
-
-                        // For Lyft
-                        val fareMatch = lyftFareRegex.find(blockText)
-                        if (fareMatch != null) {
-                            if (lyftFareTop == null || box.top < lyftFareTop) {
-                                lyftFareTop = box.top
-                            }
-                        }
-                    }
-                }
-    //                    FileLogger.log("ScreenCaptureService", "Final rideTypeTop for cropping: $rideTypeTop")
-
-                if (isLyft && lyftFareTop != null) {
-                    val offset = 50
-                    finalTop = (lyftFareTop - offset).coerceAtLeast(0)
-                    boundingBoxLockActive = true
-                    lockedRideTypeTop = finalTop
-//                    FileLogger.log("ScreenCaptureService", "Lyft fare bounding box => $finalTop")
-                } else if (isUber && uberRideTypeTop != null) {
-                    finalTop = uberRideTypeTop - 20
-                    boundingBoxLockActive = true
-                    lockedRideTypeTop = finalTop
-//                    FileLogger.log("ScreenCaptureService", "Uber ride type bounding box => $finalTop")
-                }
-            } else {
-                // bounding box is locked from previous frames
-                finalTop = lockedRideTypeTop
-            }
-
-            // ---------------------------------------------------------------
-            // 3) Crop from finalTop downward if valid
-            // ---------------------------------------------------------------
-            val finalBitmap = if (finalTop != null && finalTop in 0 until grayscaleBitmap.height) {
-                Bitmap.createBitmap(
-                    grayscaleBitmap,
-                    0,
-                    finalTop,
-                    grayscaleBitmap.width,
-                    grayscaleBitmap.height - finalTop
-                )
-            } else {
-                grayscaleBitmap
-            }
-
-            // Show the OCR preview
-//                FloatingOverlayService.updateOcrPreview(finalBitmap)
-
-            // ---------------------------------------------------------------
-            // 4) Final OCR pass
-            // ---------------------------------------------------------------
-            // ----- STEP 2: Convert finalBitmap to binary for improved OCR accuracy -----
-            // Convert the cropped grayscale image to a binary (black and white) image.
-            val binaryFinalBitmap = toBinary(finalBitmap)  // Uses the new toBinary helper function
-
-            // Create an InputImage from the binary image for final OCR processing.
-            val finalImage = InputImage.fromBitmap(binaryFinalBitmap, 0)
-
-            val finalResult = try {
-                getTextRecognizer().process(finalImage).await()
-            } catch (e: Exception) {
-                FileLogger.log("ScreenCaptureService", "Error during final OCR: ${e.message}")
-                null
-            }
-            // ----- REPLACEMENT CODE: Extract text from lines only -----
-            val finalText = finalResult?.textBlocks
-                ?.flatMap { it.lines }              // Extract lines from each block
-                ?.joinToString(separator = "\n") { it.text } ?: ""
-
-//            FileLogger.log("ScreenCaptureService", "Final OCR result (lines only): $finalText")
-
-            finalResult?.textBlocks?.forEachIndexed { index, block ->
-//                FileLogger.log("OCR_DEBUG", "Text Block #$index: '${block.text}' with bounding box ${block.boundingBox}")
-            }
-
-            ocrCallback(finalText)
-            lastProcessedBitmap = capturedBitmap
-
-            delay(captureIntervalMillis)
-            }
-        } catch (e: Exception) {
-//            FileLogger.log("ScreenCaptureService", "Unexpected error in continuous OCR: ${e.message}")
-        } finally {
-            virtualDisplay.release()
-            imageReader.close()
-            handlerThread.quitSafely()
         }
     }
 
@@ -471,7 +173,7 @@ object ScreenCaptureService {
     }
     // ----- HELPER FUNCTION: Convert Bitmap to Grayscale -----
     // This function creates a new Bitmap in grayscale using a ColorMatrix.
-    fun toGrayscale(src: Bitmap): Bitmap {
+    private fun toGrayscale(src: Bitmap): Bitmap {
         // Create a mutable bitmap with the same dimensions and configuration as src.
         val config = src.config ?: Bitmap.Config.ARGB_8888
         val grayscaleBitmap = Bitmap.createBitmap(src.width, src.height, config)
@@ -514,7 +216,7 @@ object ScreenCaptureService {
         return binaryBitmap
     }
     // ----- HELPER FUNCTION: Compare Two Bitmaps for Similarity -----
-    // This function downsamples both bitmaps and calculates a difference metric.
+    // This function down samples both bitmaps and calculates a difference metric.
     // If the total difference is below 'threshold', they are considered similar.
     fun areBitmapsSimilar(bmp1: Bitmap, bmp2: Bitmap, sampleSize: Int = 10, threshold: Int = 1000): Boolean {
         // Downscale both bitmaps to reduce computation.
@@ -592,10 +294,34 @@ object ScreenCaptureService {
             )
             fullBitmap.copyPixelsFromBuffer(buffer)
             image.close()
+            // Convert the full bitmap to grayscale.
+            val grayscaleBitmap = toGrayscale(fullBitmap)
 
-            // Optionally process the bitmap (e.g., convert to grayscale) for improved OCR accuracy.
-            val processedBitmap = toGrayscale(fullBitmap)
-            runOcrOnBitmap(processedBitmap)
+            // Perform a quick OCR pass to obtain the fullScreenResult for enhanced cropping.
+            val fullScreenResult = try {
+                getTextRecognizer().process(InputImage.fromBitmap(fullBitmap, 0)).await()
+            } catch (e: Exception) {
+//                FileLogger.log("ScreenCaptureService", "Quick OCR for enhanced cropping failed: ${e.message}")
+                null
+            }
+
+            // Use the enhanced cropping function if a quick OCR result is available.
+            val croppedBitmap = if (fullScreenResult != null) {
+                applyEnhancedDynamicCroppingForUber(grayscaleBitmap, fullScreenResult)
+            } else {
+                null
+            }
+
+            // Check if cropping succeeded.
+            if (croppedBitmap == null) {
+//                FileLogger.log("ScreenCaptureService", "Cropping failed; skipping OCR on cropped bitmap.")
+                return null
+            }
+
+            // Run final OCR on the cropped bitmap.
+            val capturedText = runOcrOnBitmap(croppedBitmap)
+            FileLogger.log("ScreenCaptureService", "Enhanced OCR Captured Text: $capturedText")
+            return capturedText
         } catch (e: Exception) {
             FileLogger.log("ScreenCaptureService", "Error processing image: ${e.message}")
             image.close()
@@ -660,5 +386,80 @@ object ScreenCaptureService {
             null
         }
     }
+    // ----- NEW FUNCTION: applyEnhancedDynamicCroppingForUber (with 5px padding) -----
+    // File: ScreenCaptureService.kt
+    // This function applies enhanced dynamic cropping for Uber requests with a 5px margin on each side.
+    // - Top boundary: 5px above the ride type text
+    // - Bottom boundary: 5px below the "Accept" or "Match" button
+    // - Left boundary: 5px to the left of the "$" fare price
+    // - Right boundary: 5px to the right of the "x" close button
+    @SuppressLint("SuspiciousIndentation")
+    fun applyEnhancedDynamicCroppingForUber(
+        fullBitmap: Bitmap,
+        fullScreenResult: com.google.mlkit.vision.text.Text
+    ): Bitmap? {
+        var topBoundary: Int? = null
+        var bottomBoundary: Int? = null
+        var leftBoundary: Int? = null
+        var rightBoundary: Int? = null
 
+        // Retrieve Uber-specific ride types
+        val uberRideTypes = UberParser.getRideTypes()
+
+        // Iterate over each text block from the OCR result
+        for (block in fullScreenResult.textBlocks) {
+            val box = block.boundingBox ?: continue
+            val blockText = block.text
+
+        // Determine top boundary: look for Uber ride type text.
+        for (ride in uberRideTypes) {
+            if (blockText.contains(ride, ignoreCase = true)) {
+                topBoundary = if (topBoundary == null) box.top else minOf(topBoundary, box.top)
+                break
+            }
+        }
+
+        // Determine bottom boundary: look for "Accept" or "Match"
+        if (blockText.contains("Accept", ignoreCase = true) || blockText.contains("Match", ignoreCase = true)) {
+            bottomBoundary = if (bottomBoundary == null) box.bottom else maxOf(bottomBoundary, box.bottom)
+        }
+
+        // Determine left boundary: look for fare price indicated by "$"
+        if (blockText.contains("$")) {
+            leftBoundary = if (leftBoundary == null) box.left else minOf(leftBoundary, box.left)
+        }
+
+        // Determine right boundary: look for a block that is exactly "x" or "X" (close button)
+        if (blockText.trim().equals("x", ignoreCase = true)) {
+            rightBoundary = if (rightBoundary == null) box.right else maxOf(rightBoundary, box.right)
+        }
+    }
+
+    // If any boundary is missing, log a message and fail the cropping.
+    if (topBoundary == null || bottomBoundary == null || leftBoundary == null || rightBoundary == null) {
+//        FileLogger.log("ScreenCaptureService", "Incomplete boundaries detected; cropping failed.")
+        return null
+    }
+
+    // Apply 5px padding adjustments:
+    // Subtract 5 from topBoundary and leftBoundary (but not below 0).
+    topBoundary = (topBoundary - 5).coerceAtLeast(0)
+    leftBoundary = (leftBoundary - 5).coerceAtLeast(0)
+    // Add 5 to bottomBoundary and rightBoundary, but don't exceed bitmap dimensions.
+    bottomBoundary = (bottomBoundary + 5).coerceAtMost(fullBitmap.height)
+    rightBoundary = (rightBoundary + 5).coerceAtMost(fullBitmap.width)
+
+    // Log the computed boundaries for debugging.
+//    FileLogger.log("ScreenCaptureService", "Enhanced Crop Boundaries with Padding: top=$topBoundary, bottom=$bottomBoundary, left=$leftBoundary, right=$rightBoundary")
+
+    // Compute width and height.
+    val cropWidth = rightBoundary - leftBoundary
+    val cropHeight = bottomBoundary - topBoundary
+
+        // Log the computed boundaries for debugging
+//        FileLogger.log("ScreenCaptureService", "Enhanced Crop Boundaries: top=$topBoundary, bottom=$bottomBoundary, left=$leftBoundary, right=$rightBoundary")
+
+        // Return the cropped bitmap
+        return Bitmap.createBitmap(fullBitmap, leftBoundary, topBoundary, cropWidth, cropHeight)
+    }
 }

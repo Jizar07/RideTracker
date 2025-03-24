@@ -126,7 +126,7 @@ object RevenueTracker {
         val calendar = Calendar.getInstance(TimeZone.getDefault())
         calendar.timeInMillis = timeMillis
         calendar.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.HOUR_OF_DAY, 4)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
@@ -140,7 +140,7 @@ object RevenueTracker {
         val calendar = Calendar.getInstance(TimeZone.getDefault())
         calendar.timeInMillis = timeMillis
         calendar.set(Calendar.DAY_OF_MONTH, 1)
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.HOUR_OF_DAY, 4)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
@@ -154,7 +154,7 @@ object RevenueTracker {
         val calendar = Calendar.getInstance(TimeZone.getDefault())
         calendar.timeInMillis = timeMillis
         calendar.set(Calendar.DAY_OF_YEAR, 1)
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.HOUR_OF_DAY, 4)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
@@ -164,7 +164,7 @@ object RevenueTracker {
     /**
      * Saves the revenue intervals to SharedPreferences as a JSON array.
      */
-    fun saveIntervals(context: Context) {
+    private fun saveIntervals(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
         for (interval in intervals) {
