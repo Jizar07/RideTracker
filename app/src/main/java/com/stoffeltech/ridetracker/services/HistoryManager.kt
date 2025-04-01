@@ -3,6 +3,8 @@ package com.stoffeltech.ridetracker.services
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.stoffeltech.ridetracker.utils.PickupLocationGeoCoder // Import the geo coder
+import com.stoffeltech.ridetracker.utils.FileLogger
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -47,13 +49,42 @@ object HistoryManager {
 
     /**
      * Adds a new ride request to the history, then saves to disk.
+     * Before persisting, attempts to obtain coordinates from the pickup location.
+     *
      * @param rideInfo the RideInfo object to store.
-     * @param context pass in the Activity or app context
+     * @param context pass in the Activity or app context.
      */
-    fun addRideRequest(rideInfo: RideInfo, context: Context) {
+    suspend fun addRideRequest(rideInfo: RideInfo, context: Context) {
+        // Log ride info details for debugging.
+        FileLogger.log("HistoryManager", "addRideRequest called with rideInfo: $rideInfo")
+
+        // Retrieve coordinates from the pickup location string.
+        val coords = rideInfo.pickupLocation?.let {
+            FileLogger.log("HistoryManager", "Attempting geocoding for pickupLocation: $it")
+            PickupLocationGeoCoder.getCoordinates(context, it)
+        }
+        if (coords != null) {
+            FileLogger.log("HistoryManager", "Geocoding returned coordinates: lat=${coords.latitude}, lng=${coords.longitude}")
+            // Create a LearningData entry using the coordinates and ride fare.
+            val learningData = LearningData(
+                fare = rideInfo.fare,
+                earningsPerHour = null, // To be computed later.
+                earningsPerMile = null, // To be computed later.
+                latitude = coords.latitude,
+                longitude = coords.longitude
+            )
+            LearningManager.addLearningData(learningData, context)
+            FileLogger.log("HistoryManager", "Learning data stored: lat=${coords.latitude}, lng=${coords.longitude}")
+        } else {
+            FileLogger.log("HistoryManager", "Unable to fetch coordinates for pickupLocation: ${rideInfo.pickupLocation}")
+        }
+
+        // Persist the ride request.
         rideHistory.add(rideInfo)
         saveHistory(context)
+        FileLogger.log("HistoryManager", "RideInfo persisted. Total rideHistory count: ${rideHistory.size}")
     }
+
 
     /**
      * Returns a snapshot (unmodifiable list) of the stored requests, newest first.

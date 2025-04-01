@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     id("com.google.gms.google-services")
 
+
 }
 buildscript {
     dependencies {
@@ -34,13 +35,11 @@ android {
         }
 
         // Retrieve the API key from local.properties
-        val googlePlacesApiKey = localProperties.getProperty("GOOGLE_PLACES_API_KEY") ?: ""
         val googleAIApiKey = localProperties.getProperty("GOOGLE_AI_API_KEY") ?: ""
 
         buildConfigField("String", "GOOGLE_AI_API_KEY", "\"${googleAIApiKey}\"")
-        buildConfigField("String", "GOOGLE_PLACES_API_KEY", "\"$googlePlacesApiKey\"")
 
-        manifestPlaceholders["googleMapsKey"] = googlePlacesApiKey
+        manifestPlaceholders["googleMapsKey"] = googleAIApiKey
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -105,8 +104,10 @@ dependencies {
 
     // ----- NEW: Import OkHttp dependencies -----
 // Make sure these dependencies are added in your build.gradle file:
-     implementation("com.squareup.okhttp3:okhttp:4.11.0")
-     implementation("com.squareup.okhttp3:logging-interceptor:4.9.3")
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.9.3")
+
+
 
 
     implementation(libs.androidx.core.ktx)

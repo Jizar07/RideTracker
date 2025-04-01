@@ -21,6 +21,7 @@ import java.util.*
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import com.stoffeltech.ridetracker.uber.UberParser
+import com.stoffeltech.ridetracker.utils.FileLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -74,9 +75,9 @@ object ScreenshotService {
             FileOutputStream(file).use { fos ->
                 bitmap.compress(CompressFormat.PNG, 100, fos)
             }
-            Log.d("ScreenshotService", "✅ Screenshot saved to ${file.absolutePath}")
+            FileLogger.log("ScreenshotService", "✅ Screenshot saved to ${file.absolutePath}")
         } catch (e: Exception) {
-            Log.e("ScreenshotService", "❌ Error saving screenshot: ${e.message}")
+            FileLogger.log("ScreenshotService", "❌ Error saving screenshot: ${e.message}")
         }
     }
     // ---------------- SAVE SCREENSHOT - END -----------------
@@ -92,10 +93,11 @@ object ScreenshotService {
     // ----- CAPTURE FULL SCREEN SCREENSHOT - UPDATED -----
 // Captures a full-screen screenshot using the persistent capture function and saves it.
     fun captureFullScreen(context: Context, rideType: String) {
+
         // Duplicate screenshot prevention
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastScreenshotTime < SCREENSHOT_INTERVAL_MS) {
-            Log.d("ScreenshotService", "Screenshot recently taken. Skipping duplicate capture.")
+            FileLogger.log("ScreenshotService", "Screenshot recently taken. Skipping duplicate capture.")
             return
         }
         lastScreenshotTime = currentTime
@@ -104,12 +106,19 @@ object ScreenshotService {
         Handler(Looper.getMainLooper()).postDelayed({
             // Launch a coroutine to capture a fresh bitmap using persistent resources.
             CoroutineScope(Dispatchers.IO).launch {
+                val settingsPrefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                val isScreenshotSliderOn = settingsPrefs.getBoolean("screenshot_slider", false)
                 val capturedBitmap = ScreenCaptureService.captureBitmapPersistent(context)
                 if (capturedBitmap != null) {
-                    Log.d("ScreenshotService", "Capturing screenshot after delay.")
-                    saveScreenshot(capturedBitmap, rideType)
+                    FileLogger.log("ScreenshotService", "Capturing screenshot after delay.")
+                    if (isScreenshotSliderOn) {
+                        saveScreenshot(capturedBitmap, rideType)
+                    } else {
+                        FileLogger.log("ScreenshotService", "Screenshot slider is off. Not saving screenshot.")
+                    }
+
                 } else {
-                    Log.e("ScreenshotService", "No captured bitmap available for screenshot.")
+                    FileLogger.log("ScreenshotService", "No captured bitmap available for screenshot.")
                 }
             }
         }, CAPTURE_DELAY_MS)

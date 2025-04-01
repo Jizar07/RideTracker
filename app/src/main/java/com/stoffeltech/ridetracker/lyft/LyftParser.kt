@@ -478,7 +478,7 @@ object LyftParser {
      * Process the ride request using ACC text.
      * Updated to accept a Context so that both accessibility services and activities can call this method.
      */
-    fun processLyftRideRequest(accText: String, context: Context) {
+    suspend fun processLyftRideRequest(accText: String, context: Context) {
 
         // ----- NEW: Guard clause to ignore empty events -----
         if (accText.trim().isEmpty()) {

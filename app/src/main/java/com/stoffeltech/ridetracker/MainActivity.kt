@@ -7,7 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.ComponentName
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -22,9 +26,11 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -41,9 +47,11 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
+import com.google.android.gms.maps.model.MarkerOptions
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.stoffeltech.ridetracker.uber.UberActivity
@@ -57,15 +65,21 @@ import com.stoffeltech.ridetracker.utils.DistanceTracker
 import com.stoffeltech.ridetracker.utils.RevenueTracker
 import com.stoffeltech.ridetracker.utils.TimeTracker
 import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager // NEW: centralized MP manager
+import com.stoffeltech.ridetracker.services.ClusterData
 import com.stoffeltech.ridetracker.services.HistoryManager
+import com.stoffeltech.ridetracker.services.LearningData
+import com.stoffeltech.ridetracker.services.LearningManager
 import com.stoffeltech.ridetracker.services.ScreenCaptureService
+import com.stoffeltech.ridetracker.services.clusterLearningDataWithMerging
 import com.stoffeltech.ridetracker.uber.UberApiTest
 import com.stoffeltech.ridetracker.uber.UberParser
 import com.stoffeltech.ridetracker.utils.FileLogger
 import com.stoffeltech.ridetracker.utils.LocationSender
+import com.stoffeltech.ridetracker.utils.PickupLocationGeoCoder.getCoordinatesAsync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 fun isNotificationAccessEnabled(context: Context): Boolean {
@@ -103,7 +117,6 @@ fun getColorWithOpacity(color: Int, opacityPercent: Int): Int {
 private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 private val STORAGE_PERMISSION_REQUEST_CODE = 1001
 
-
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -134,6 +147,22 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val INACTIVITY_DURATION_MS = 1 * 1000
     private var lastPoiFetchLocation: LatLng? = null
     private val POI_FETCH_DISTANCE_THRESHOLD = 1609.34
+    private val rideHistoryViewModel: RideHistoryViewModel by viewModels()
+
+    // *** NEW: Maintain a map of cluster overlays (p/hour clusters) for differential updates ***
+    // Keyed by a unique identifier derived from the cluster center.
+    private val clusterOverlays = mutableMapOf<String, Pair<com.google.android.gms.maps.model.Circle, com.google.android.gms.maps.model.Marker>>()
+
+    // Helper function to generate a unique ID for a cluster overlay using the cluster's center coordinates.
+    private fun getClusterId(center: LatLng): String {
+        return "${"%.4f".format(center.latitude)}_${"%.4f".format(center.longitude)}"
+    }
+    // At the top of MainActivity.kt (inside the MainActivity class)
+    private var isInitialCameraSet = false
+    // In MainActivity.kt (inside the MainActivity class)
+    private var currentClusters: List<ClusterData> = emptyList()
+
+
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
@@ -150,13 +179,21 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 if (speedMps >= 1f) currentBearing = location.bearing
 
                 if (::mMap.isInitialized && shouldUpdateCamera) {
+                    // Use 16f only for the first camera update, thereafter preserve the current zoom level.
+                    val zoomLevel = if (!isInitialCameraSet) {
+                        isInitialCameraSet = true
+                        15f
+                    } else {
+                        mMap.cameraPosition.zoom
+                    }
                     val cameraPosition = com.google.android.gms.maps.model.CameraPosition.Builder()
                         .target(currentLatLng)
-                        .zoom(18f)
+                        .zoom(zoomLevel)
                         .bearing(currentBearing)
                         .build()
                     mMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
                 }
+
 
                 if (previousLocation == null) {
                     previousLocation = location
@@ -220,6 +257,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             MediaProjectionLifecycleManager.stopMediaProjection()
         }
         setContentView(R.layout.activity_main)
+        // Inside onCreate() in MainActivity.kt, after setContentView(...)
+        val screenshotSwitch = findViewById<Switch>(R.id.switchScreenshotOptions)
+        // Use a SharedPreferences file named "settings" (or your preferred name)
+        val settingsPrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        screenshotSwitch.isChecked = settingsPrefs.getBoolean("screenshot_slider", false) // Initialize from saved value
+        screenshotSwitch.setOnCheckedChangeListener { _, isChecked ->
+            // Save the new state to SharedPreferences
+            settingsPrefs.edit().putBoolean("screenshot_slider", isChecked).apply()
+            FileLogger.log("MainActivity", "Screenshot slider set to $isChecked")
+        }
+
 
         // Initialize FileLogger here
         FileLogger.init(this) // Now your logger is ready for use after MainActivity is running
@@ -229,6 +277,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val intent = Intent(this, RequestHistoryActivity::class.java)
             startActivity(intent)
         }
+        // Inside onCreate() after setContentView(...)
+        val btnUpdateClusters = findViewById<Button>(R.id.btnUpdateClusters)
+        btnUpdateClusters.setOnClickListener {
+            // Ensure the learning data is refreshed from history
+            lifecycleScope.launch {
+                LearningManager.updateLearningDataFromHistory(this@MainActivity)
+                updateClusterMap()  // Now update clusters based on full history
+            }
+            Toast.makeText(this, "Cluster circles updated", Toast.LENGTH_SHORT).show()
+        }
+
 
 
 
@@ -242,7 +301,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             return
         }
 
-//        setContentView(R.layout.activity_main)
         tvCurrentSpeed = findViewById(R.id.tvCurrentSpeed)
         ivModeSwitch = findViewById(R.id.ivModeSwitch)
         tvDailyEarning = findViewById(R.id.tvDailyEarning)
@@ -349,6 +407,26 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             launchApp("com.lyft.android.driver", "com.lyft.android.driver.app.ui.DriverMainActivity")
         }
 
+        getCoordinatesAsync(this, "37th Ave & 5th St, Naples") { coordinates ->
+            if (coordinates != null) {
+                // Use the coordinates (this code runs on the main thread)
+                FileLogger.log("MainActivity", "Coordinates: ${coordinates.latitude}, ${coordinates.longitude}")
+            } else {
+                // Handle the error or absence of coordinates
+                FileLogger.log("MainActivity", "No coordinates found")
+            }
+        }
+        rideHistoryViewModel.rideHistory.observe(this) {
+            // When rideHistory changes, trigger update of learning data.
+            // Launch a coroutine in the Main scope.
+            lifecycleScope.launch {
+                // Call updateLearningDataFromHistory off the main thread.
+                // Ensure updateLearningDataFromHistory is a suspend function (as previously updated).
+                LearningManager.updateLearningDataFromHistory(this@MainActivity)
+                // Optionally update any UI that depends on learning data here.
+            }
+        }
+
         startOverlayService()
         TimeTracker.loadIntervals(this)
         TimeTracker.startTracking(this)
@@ -377,7 +455,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun requestScreenCapturePermission() {
         // If an old MediaProjection session is still active, release it.
-        if (MediaProjectionLifecycleManager.isMediaProjectionValid()) {
+        if (!MediaProjectionLifecycleManager.isMediaProjectionValid()) {
             // Release persistent capture resources (ImageReader/VirtualDisplay)
             ScreenCaptureService.releasePersistentCapture()
             // Stop the previous MediaProjection
@@ -391,6 +469,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
+        mMap.setTrafficEnabled(true)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             mMap.isMyLocationEnabled = true
         }
@@ -409,13 +488,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         mMap.setOnCameraMoveStartedListener { reason ->
             if (reason == GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE) {
                 shouldUpdateCamera = false
+                Handler(Looper.getMainLooper()).postDelayed({
+                    shouldUpdateCamera = true
+                }, 15000)
             }
         }
         // ---------------- REQUEST MEDIA PROJECTION PERMISSION - Start ----------------
         // In onMapReady() in MainActivity.kt:
         if (!MediaProjectionLifecycleManager.isMediaProjectionValid()) {
             requestScreenCapturePermission()  // Launch permission request.
-            Log.d("MainActivity", "MediaProjection token invalid. Requesting new permission.")
+            FileLogger.log("MainActivity", "MediaProjection token invalid. Requesting new permission.")
             return  // Exit onMapReady to avoid starting services with an invalid token.
         } else {
             // Safe to start the overlay service.
@@ -451,56 +533,25 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // Delay MediaProjection start by 500 ms to ensure FloatingOverlayService is running.
             Handler(Looper.getMainLooper()).postDelayed({
                 MediaProjectionLifecycleManager.startMediaProjection(this, result.resultCode, data)
-                Log.d("MainActivity", "MediaProjection set successfully after delay")
+                FileLogger.log("MainActivity", "MediaProjection set successfully after delay")
 
                 val mediaProjection = MediaProjectionLifecycleManager.getMediaProjection()
                 if (mediaProjection != null) {
                     lifecycleScope.launch(Dispatchers.IO) {
                         delay(500)
                         ScreenCaptureService.initPersistentCapture(this@MainActivity, mediaProjection)
-//                        ScreenCaptureService.continuouslyCaptureAndSendOcr(
-//                            this@MainActivity,
-//                            mediaProjection
-//                        ) { ocrText ->
-//                            // Use Uber's OCR logic as a template and add Lyft processing.
-//                            // Identify the earliest occurrence of Uber or Lyft keywords.
-//                            val uberTypes = UberParser.getRideTypes()  // Uber ride types list
-//                            val lyftKeyword = "Lyft" // Basic keyword for Lyft
-//                            var uberIndex = Int.MAX_VALUE
-//                            // Find earliest occurrence of any Uber keyword.
-//                            for (ride in uberTypes) {
-//                                val idx = ocrText.indexOf(ride, ignoreCase = true)
-//                                if (idx != -1 && idx < uberIndex) {
-//                                    uberIndex = idx
-//                                }
-//                            }
-//                            // Find index of the Lyft keyword.
-//                            val lyftIndex = ocrText.indexOf(lyftKeyword, ignoreCase = true)
-//                            var filteredText = ocrText
-//                            // Dispatch based on which keyword appears first.
-//                            if (lyftIndex != -1 && lyftIndex < uberIndex) {
-//                                filteredText = ocrText.substring(lyftIndex)
-//                                lifecycleScope.launch(Dispatchers.IO) {
-//                                    com.stoffeltech.ridetracker.lyft.LyftParser.processLyftRideRequest(filteredText, this@MainActivity)
-//                                }
-//                            } else if (uberIndex != Int.MAX_VALUE) {
-//                                filteredText = ocrText.substring(uberIndex)
-//                                lifecycleScope.launch(Dispatchers.IO) {
-//                                    UberParser.processUberRideRequest(filteredText, this@MainActivity)
-//                                }
-//                            }
-//                        }
                     }
                     startOverlayService()
+
                 } else {
-                    Log.e("MainActivity", "MediaProjection token is not valid after delay")
+                    FileLogger.log("MainActivity", "MediaProjection token is not valid after delay")
                 }
-            }, 500)
+            }, 1000)
         } ?: run {
-            Log.e("MainActivity", "Screen capture permission granted but result.data is null")
+            FileLogger.log("MainActivity", "Screen capture permission granted but result.data is null")
         }
     } else {
-        Log.e("MainActivity", "Screen capture permission denied")
+        FileLogger.log("MainActivity", "Screen capture permission denied")
     }
 }
 
@@ -530,8 +581,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
         recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                val extractedText = visionText.text
+            .addOnSuccessListener {
+//                val extractedText = visionText.text
 //                LogHelper.logDebug("RideTracker", "Extracted OCR Text: $extractedText")
             }
             .addOnFailureListener { e ->
@@ -555,6 +606,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         fusedLocationClient.removeLocationUpdates(locationCallback)
         isTrackingLocation = false
     }
+    @SuppressLint("SetTextI18n", "CutPasteId")
     private fun onRideFinished() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -568,7 +620,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val poiResults = fetchNearbyPOIs(currentLatLng, 25.0)
                     val clusters = clusterPlaces(poiResults)
                     runOnUiThread {
-                        mMap.clear()
+                        updateClusterMap()
                         for (cluster in clusters) {
                             mMap.addCircle(
                                 CircleOptions()
@@ -580,6 +632,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                             )
                         }
                     }
+                    updateClusterMap()
                     val aiResponseText = findViewById<TextView>(R.id.aiResponseText)
                     if (clusters.isNotEmpty()) {
                         val nearestCluster = clusters.minByOrNull { cluster ->
@@ -595,73 +648,226 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                             val distanceMiles = distanceMeters * 0.000621371
                             aiResponseText.text = "You are %.2f miles away from the closest hotspot".format(distanceMiles)
                             btnMapToHotspot.visibility = View.VISIBLE
-                            val navigationContainer = findViewById<LinearLayout>(R.id.navigationContainer)
-                            val tvInstruction = findViewById<TextView>(R.id.tvNavigationInstruction)
-                            val btnNextInstruction = findViewById<Button>(R.id.btnNextInstruction)
-                            val btnCancelNavigation = findViewById<Button>(R.id.btnCancelNavigation)
-                            btnCancelNavigation.visibility = View.GONE
+                            runOnUiThread {
+                                findViewById<TextView>(R.id.aiInitialMessage).visibility = View.GONE
+                                findViewById<LinearLayout>(R.id.aiSplitContainer).visibility = View.VISIBLE
+                            }
+//                            val navigationContainer = findViewById<LinearLayout>(R.id.navigationContainer)
+//                            val tvInstruction = findViewById<TextView>(R.id.tvNavigationInstruction)
+//                            val btnNextInstruction = findViewById<Button>(R.id.btnNextInstruction)
+//                            val btnCancelNavigation = findViewById<Button>(R.id.btnCancelNavigation)
+//                            btnCancelNavigation.visibility = View.GONE
                             var navigationPolyline: com.google.android.gms.maps.model.Polyline? = null
-                            var instructionIndex = 0
+//                            var instructionIndex = 0
                             btnMapToHotspot.setOnClickListener {
-                                // Updated for OSRM: remove access token reference and call fetchRoute without token.
-                                lifecycleScope.launch {
-                                    // Call fetchRoute using OSRM API (no token required)
-                                    val route = DirectionsHelper.fetchRoute(currentLatLng, hotspotLatLng)
-                                    if (route != null) {
-                                        runOnUiThread {
-                                            navigationPolyline?.remove()
-                                            navigationPolyline = mMap.addPolyline(
-                                                com.google.android.gms.maps.model.PolylineOptions()
-                                                    .addAll(route.polylinePoints)
-                                                    .color(Color.BLUE)
-                                                    .width(10f)
-                                            )
-                                            val boundsBuilder = com.google.android.gms.maps.model.LatLngBounds.Builder()
-                                            route.polylinePoints.forEach { boundsBuilder.include(it) }
-                                            val bounds = boundsBuilder.build()
-                                            mMap.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100))
-                                            navigationContainer.visibility = View.VISIBLE
-                                            btnCancelNavigation.visibility = View.VISIBLE
-                                            if (route.steps.isNotEmpty()) {
-                                                tvInstruction.text = route.steps[instructionIndex].instruction
-                                            } else {
-                                                tvInstruction.text = "No navigation instructions available."
-                                            }
-                                            btnNextInstruction.setOnClickListener {
-                                                if (++instructionIndex < route.steps.size) {
-                                                    tvInstruction.text = route.steps[instructionIndex].instruction
-                                                    mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(route.steps[instructionIndex].startLocation, 17f))
-                                                } else {
-                                                    Toast.makeText(this@MainActivity, "End of instructions.", Toast.LENGTH_SHORT).show()
-                                                    instructionIndex = 0
-                                                }
-                                            }
-                                            btnCancelNavigation.setOnClickListener {
+                                // Check the current state by inspecting the button's text
+                                if (btnMapToHotspot.text.toString() == "Go") {
+                                    // "Go" mode: Fetch and display the route.
+                                    lifecycleScope.launch {
+                                        val route = DirectionsHelper.fetchRoute(currentLatLng, hotspotLatLng)
+                                        if (route != null) {
+                                            runOnUiThread {
+                                                // Remove any existing polyline
                                                 navigationPolyline?.remove()
-                                                btnCancelNavigation.visibility = View.GONE
-                                                navigationContainer.visibility = View.GONE
-                                                btnNextInstruction.text = "Navigation canceled."
+                                                navigationPolyline = mMap.addPolyline(
+                                                    com.google.android.gms.maps.model.PolylineOptions()
+                                                        .addAll(route.polylinePoints)
+                                                        .color(Color.BLUE)
+                                                        .width(10f)
+                                                )
+                                                // Change the button text to "Cancel"
+                                                btnMapToHotspot.text = "Cancel"
                                             }
-                                        }
-                                    } else {
-                                        runOnUiThread {
-                                            Toast.makeText(this@MainActivity, "Unable to fetch route", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            runOnUiThread {
+                                                Toast.makeText(this@MainActivity, "Unable to fetch route", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     }
+                                } else {
+                                    // "Cancel" mode: Remove the route and update UI accordingly.
+                                    navigationPolyline?.remove()
+                                    navigationPolyline = null
+                                    // Optionally hide any navigation container or update instructions if needed.
+                                    // For example:
+                                    // navigationContainer.visibility = View.GONE
+                                    // btnNextInstruction.text = "Navigation canceled."
+                                    btnMapToHotspot.text = "Go"
                                 }
                             }
+
                         } else {
                             aiResponseText.text = "No hotspots found nearby."
                             findViewById<Button>(R.id.btnMapToHotspot).visibility = View.GONE
+
+                            runOnUiThread {
+                                findViewById<TextView>(R.id.aiInitialMessage).visibility = View.GONE
+                                findViewById<LinearLayout>(R.id.aiSplitContainer).visibility = View.VISIBLE
+                            }
                         }
                     }
                 }
             }
         }
     }
+    // --- New: Method to update clusters on the map with earnings labels ---
+    @SuppressLint("DefaultLocale")
+    private fun updateClusterMap() {
+        // Launch heavy computations off the main thread
+        lifecycleScope.launch(Dispatchers.Default) {
+            val learningDataList = LearningManager.getAllLearningData()
+            val clusters: List<ClusterData> = clusterLearningDataWithMerging(learningDataList, 5.0)
+                .sortedBy { it.averageEarningsPerHour ?: 0.0 }
+
+            // Compute dynamic thresholds based on the clusters’ average earnings.
+            val clusterEarningsValues = clusters.mapNotNull { it.averageEarningsPerHour }
+            val globalMin = clusterEarningsValues.minOrNull() ?: 0.0
+            val globalMax = clusterEarningsValues.maxOrNull() ?: globalMin
+
+            // Prepare new overlay data keyed by a unique cluster ID
+            val newOverlays = mutableMapOf<String, Triple<LatLng, Double, Pair<Int, Bitmap>>>()
+            for (cluster in clusters) {
+                val center = LatLng(cluster.centerLatitude, cluster.centerLongitude)
+                val dynamicRadius = calculateClusterRadius(center, cluster.learningDataEntries)
+                val circleColor = if (cluster.averageEarningsPerHour != null && cluster.averageEarningsPerHour > 0.0) {
+                    getColorForEarnings(cluster.averageEarningsPerHour, globalMin, globalMax)
+                } else {
+                    Color.GRAY
+                }
+                val labelBitmap = createTextBitmap(String.format("$%.2f/hr", cluster.averageEarningsPerHour ?: 0.0))
+                val id = getClusterId(center)
+                newOverlays[id] = Triple(center, dynamicRadius, Pair(circleColor, labelBitmap))
+            }
+
+            // Switch back to the main thread for UI updates
+            withContext(Dispatchers.Main) {
+                // Update existing overlays or add new ones
+                for ((id, overlayData) in newOverlays) {
+                    val (center, radius, colorAndBitmap) = overlayData
+                    val (circleColor, bitmap) = colorAndBitmap
+                    if (clusterOverlays.containsKey(id)) {
+                        // Overlay exists; update its properties if they differ
+                        val (existingCircle, existingMarker) = clusterOverlays[id]!!
+                        existingCircle.center = center
+                        existingCircle.radius = radius
+                        existingCircle.strokeColor = circleColor
+                        existingCircle.fillColor = getColorWithOpacity(circleColor, 40)
+                        existingMarker.position = center
+                        existingMarker.setIcon(BitmapDescriptorFactory.fromBitmap(bitmap))
+                    } else {
+                        // Create new overlays and add them to the map and our tracking map
+                        val newCircle = mMap.addCircle(
+                            CircleOptions()
+                                .center(center)
+                                .radius(radius)
+                                .strokeColor(circleColor)
+                                .strokeWidth(2f)
+                                .fillColor(getColorWithOpacity(circleColor, 45))
+                        )
+                        val newMarker = mMap.addMarker(
+                            MarkerOptions()
+                                .position(center)
+                                .icon(BitmapDescriptorFactory.fromBitmap(bitmap))
+                                .anchor(0.5f, 0.5f)
+                                .flat(true)
+                        )
+                        newMarker?.alpha = 0.5f  // 0.0f is fully transparent, 1.0f is fully opaque
+
+                        if (newMarker != null) {
+                            clusterOverlays[id] = Pair(newCircle, newMarker)
+                        }
+                    }
+                }
+                // Remove overlays that are no longer present in the new cluster data
+                val obsoleteKeys = clusterOverlays.keys.filter { it !in newOverlays.keys }
+                for (key in obsoleteKeys) {
+                    val (circle, marker) = clusterOverlays[key]!!
+                    circle.remove()
+                    marker.remove()
+                    clusterOverlays.remove(key)
+                }
+            }
+        }
+    }
+
+    private fun calculateClusterRadius(center: LatLng, entries: List<LearningData>): Double {
+        // If only one entry, use a default radius (e.g., 8047 meters ~5 miles).
+        if (entries.size < 2) return 8047.0
+
+        var maxDistance = 0.0
+        for (entry in entries) {
+            val entryLatLng = LatLng(entry.latitude, entry.longitude)
+            val results = FloatArray(1)
+            android.location.Location.distanceBetween(
+                center.latitude, center.longitude,
+                entryLatLng.latitude, entryLatLng.longitude,
+                results
+            )
+            if (results[0] > maxDistance) {
+                maxDistance = results[0].toDouble()
+            }
+        }
+        // Compute a dynamic radius: use the cluster spread plus padding,
+        // but don't go below a small minimum (e.g., 500 meters).
+        return maxOf(maxDistance + 100.0, 500.0)
+    }
+
+
+    // Helper function to interpolate between red and green based on earnings.
+    // AFTER: Thresholds are passed as parameters (dynamic values)
+    private fun getColorForEarnings(
+        earnings: Double?,
+        minEarnings: Double,
+        maxEarnings: Double
+    ): Int {
+        if (earnings == null) return Color.GRAY
+        val range = maxEarnings - minEarnings
+        // If the range is effectively zero, use a default color (or compute a fallback)
+        if (range < 0.0001) return Color.GREEN
+
+        val clamped = earnings.coerceIn(minEarnings, maxEarnings)
+        val normalized = (clamped - minEarnings) / range
+        val red = (255 * (1 - normalized)).toInt()
+        val green = (255 * normalized).toInt()
+        return Color.rgb(red, green, 0)
+    }
+
+
+
+    private fun createTextBitmap(text: String): Bitmap {
+        // Convert a desired text size from dp to pixels.
+        val scale = resources.displayMetrics.density
+        val desiredTextSizeDp = 20f
+        val textSize = desiredTextSizeDp * scale  // Now textSize is scaled based on screen density.
+
+        // Optionally, adjust the padding as well.
+        val padding = (30 * scale).toInt()
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            this.textSize = textSize
+            textAlign = Paint.Align.LEFT
+        }
+        val textBounds = Rect()
+        paint.getTextBounds(text, 0, text.length, textBounds)
+        val width = textBounds.width() + 2 * padding
+        val height = textBounds.height() + 2 * padding
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), Paint().apply { color = Color.TRANSPARENT })
+        val x = padding.toFloat()
+        // Adjust y so that the text is vertically centered.
+        val y = height - padding.toFloat()
+        canvas.drawText(text, x, y, paint)
+        return bitmap
+    }
 
     override fun onResume() {
         super.onResume()
+        lifecycleScope.launch {
+            LearningManager.updateLearningDataFromHistory(this@MainActivity)
+        }
         TimeTracker.loadIntervals(this)
         updateTimeUI()
         updateEarningsUI()
@@ -674,7 +880,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             ivModeSwitch.setImageResource(R.drawable.ic_sun)
         }
 //        UberApiTest.fetchCurrentRideRequest(this) { rideInfoString ->
-//            Log.d("MainActivity", "API call result: $rideInfoString")
+//            FileLogger.log("MainActivity", "API call result: $rideInfoString")
 //        }
     }
 
@@ -699,6 +905,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         tvDistanceTravelled.text = "Distance: %.2f miles".format(dailyMiles)
     }
 
+    @SuppressLint("SetTextI18n")
     private fun updateEarningsUI() {
         RevenueTracker.loadIntervals(this)
         val dailyRevenue = RevenueTracker.getDailyRevenue()
@@ -790,7 +997,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             if (LOG_ENABLED) android.util.Log.i(tag, message)
         }
         fun logDebug(tag: String, message: String) {
-            if (LOG_ENABLED) android.util.Log.d(tag, message)
+            if (LOG_ENABLED) android.util.Log.e(tag, message)
         }
         fun logError(tag: String, message: String, throwable: Throwable?) {
             if (LOG_ENABLED) android.util.Log.e(tag, message, throwable)

@@ -106,7 +106,7 @@ class AccessibilityService : AccessibilityService() {
             val detectedText = extractTextFromNode(event.source).ifBlank { event.text.joinToString(" ") }
 
             // --- ADDED LOG: Print the extracted text for debugging ---
-                        FileLogger.log("AccessibilityService", "Extracted text from event: $detectedText")   // ------------------------------------------------------------------ SHOW LOG FROM ACC EXTRACTED TEXT
+//                        FileLogger.log("AccessibilityService", "Extracted text from event: $detectedText")   // ------------------------------------------------------------------ SHOW LOG FROM ACC EXTRACTED TEXT
 
             // ---------------- SPECIFIC EARNINGS EXTRACTION -----------------
             // Look for the specific earnings string following "TODAY"
@@ -131,12 +131,13 @@ class AccessibilityService : AccessibilityService() {
                     lastExtractionDate = currentDate
                 }
 
-                if (currentDailyEarnings > lastExtractedDailyEarnings) {
-                    val delta = currentDailyEarnings - lastExtractedDailyEarnings
-                    FileLogger.log("AccessibilityService", "New earnings detected. Delta: $$delta")
-                    RevenueTracker.addRevenue(applicationContext, delta)
+                // Instead of adding a delta, update Uber's revenue to the current value.
+                if (currentDailyEarnings != lastExtractedDailyEarnings) {
+                    FileLogger.log("AccessibilityService", "Uber earnings updated from $$lastExtractedDailyEarnings to $$currentDailyEarnings")
+                    RevenueTracker.updateUberRevenue(applicationContext, currentDailyEarnings)
                     lastExtractedDailyEarnings = currentDailyEarnings
                 }
+
             }
 
             // ---------------------------------------------------------------
@@ -186,6 +187,13 @@ class AccessibilityService : AccessibilityService() {
 
                     // For events that do not match pending logic, process as usual.
                     UberParser.processUberRideRequest(detectedText, this@AccessibilityService)
+                    // NEW: Call PickupLocationGeoCoder to convert pickupLocation into coordinates.
+                    val coords = com.stoffeltech.ridetracker.utils.PickupLocationGeoCoder.getCoordinatesFromUberRequest(this@AccessibilityService, detectedText)
+                    if (coords != null) {
+                        FileLogger.log("AccessibilityService", "Test: Pickup coordinates: latitude=${coords.latitude}, longitude=${coords.longitude}")
+                    } else {
+                        FileLogger.log("AccessibilityService", "Test: No pickup coordinates obtained from detected text.")
+                    }
                 }
 
                 // ----- INSERT NEW ON-DEMAND OCR TRIGGER BELOW -----

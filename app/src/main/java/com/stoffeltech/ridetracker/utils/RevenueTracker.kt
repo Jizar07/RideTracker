@@ -39,6 +39,25 @@ object RevenueTracker {
         saveIntervals(context)
     }
 
+    /**
+     * For Uber revenue updates, update today's value to the current value from ACC.
+     * This method removes any existing Uber intervals for today and adds a new interval
+     * with the current value, ensuring that the daily Uber revenue always reflects
+     * the latest value.
+     *
+     * @param context The context used to save intervals.
+     * @param currentValue The current Uber revenue from ACC.
+     */
+    fun updateUberRevenue(context: Context, currentValue: Double) {
+        val threshold = getStartOfDay(System.currentTimeMillis())
+        // Remove any Uber intervals recorded today.
+        intervals.removeAll { it.source == "Uber" && it.start >= threshold }
+        // Add new interval with the current value.
+        val now = System.currentTimeMillis()
+        intervals.add(RevenueInterval(now, now, currentValue, "Uber"))
+        saveIntervals(context)
+    }
+
     fun getIntervals(): List<RevenueInterval> = intervals.toList()
 
     /**

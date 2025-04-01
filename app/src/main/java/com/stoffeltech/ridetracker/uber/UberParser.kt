@@ -48,6 +48,8 @@ private var lastGlobalInvalidRequestTime: Long = 0
 object UberParser {
     // ---------------- LAST VALID REQUEST TIMESTAMP -----------------
     var lastValidRequestTime: Long = 0
+    var lastValidRideInfo: RideInfo? = null
+
 
     private val rideTypes = listOf(
         "UberX Priority",
@@ -266,6 +268,7 @@ object UberParser {
 
         val rideTypeMatch = rideTypeRegex.find(text)
         var rideType = rideTypeMatch?.value ?: "Undetected"
+
 
         /* Checks if the ride type contains "Exclusive" (case-insensitive).
          * We'll store it in rideSubtype, but also remove it from the main rideType text
@@ -634,7 +637,10 @@ object UberParser {
         lastUberRequestFingerprint = fingerprint
         lastUberFingerprintTime = currentTime
 
+
         com.stoffeltech.ridetracker.services.HistoryManager.addRideRequest(rideInfo, context)
+        // Store the valid ride request globally:
+        UberParser.lastValidRideInfo = rideInfo
 
         // Bring Uber Driver app to the foreground when a new ride request is processed.
         bringUberAppToForeground(context)

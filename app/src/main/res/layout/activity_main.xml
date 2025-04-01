@@ -166,9 +166,10 @@
             android:id="@+id/map"
             android:name="com.google.android.gms.maps.SupportMapFragment"
             android:layout_below="@id/llEarningsRow"
-            android:layout_above="@id/aiOutputContainer"
+            android:layout_above="@id/bottomWrapper"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
 
         <!-- Top Right Controls in Vertical Mode (centered vertically) -->
         <LinearLayout
@@ -242,159 +243,201 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Bottom Controls Container: Contains screenshot switch & app launchers -->
+        <!-- New Bottom Wrapper: Groups bottom controls and AI output -->
+
         <LinearLayout
-            android:id="@+id/llBottomControls"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:padding="8dp"
-            android:layout_above="@id/aiOutputContainer">
-
-            <!--- activity_main.xml - Insert a button for history -->
-            <Button
-                android:id="@+id/btnRequestHistory"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="View History"
-                android:textColor="@android:color/white"
-                android:background="#000000"
-                android:layout_margin="8dp"
-                android:padding="8dp" />
-
-            <!-- Screenshot Switch Box -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="4dp">
-                <Switch
-                    android:id="@+id/switchScreenshotOptions"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Screenshot" />
-            </LinearLayout>
-
-            <!-- Vertical Divider -->
-            <View
-                android:layout_width="1dp"
-                android:layout_height="match_parent"
-                android:background="#B388FF"
-                android:layout_marginHorizontal="8dp" />
-
-            <!-- Uber Icon Box -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:padding="4dp">
-                <ImageView
-                    android:id="@+id/ivUber"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:src="@drawable/ic_uber"
-                    android:scaleType="centerInside" />
-            </LinearLayout>
-
-            <!-- Vertical Divider -->
-            <View
-                android:layout_width="1dp"
-                android:layout_height="match_parent"
-                android:background="#B388FF"
-                android:layout_marginHorizontal="8dp" />
-
-            <!-- Lyft Icon Box -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:padding="4dp">
-                <ImageView
-                    android:id="@+id/ivLyft"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:src="@drawable/ic_lyft"
-                    android:scaleType="centerInside" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- AI Notificator: Positioned at the very bottom -->
-        <LinearLayout
-            android:id="@+id/aiOutputContainer"
+            android:id="@+id/bottomWrapper"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_alignParentBottom="true"
-            android:background="#DA000000"
-            android:elevation="4dp"
-            android:orientation="vertical"
-            android:padding="16dp">
+            android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/aiResponseText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="AI Thinking..."
-                android:textSize="12sp"
-                android:textColor="@color/white" />
-
-            <Button
-                android:id="@+id/btnMapToHotspot"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/white"
-                android:background="#000000"
-                android:text="Go"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Existing Navigation Container for turn-by-turn instructions -->
-        <LinearLayout
-            android:id="@+id/navigationContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_alignParentTop="true"
-            android:orientation="vertical"
-            android:padding="16dp"
-            android:background="#FFFFFF"
-            android:elevation="4dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/tvNavigationInstruction"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="AI instruction..."
-                android:textSize="12sp"
-                android:textColor="#000000" />
-
-            <!-- Horizontal container for navigation buttons -->
+            <!-- Bottom Controls Container -->
             <LinearLayout
+                android:id="@+id/llBottomControls"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="end"
-                android:paddingTop="8dp">
+                android:gravity="center_vertical"
+                android:padding="2dp"
+                android:background="#000000">
 
+                <!-- View History Button -->
                 <Button
-                    android:id="@+id/btnNextInstruction"
+                    android:id="@+id/btnRequestHistory"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Next"
-                    android:layout_marginEnd="8dp" />
+                    android:text="View History"
+                    android:padding="4dp"
+                    android:singleLine="true"
+                    android:autoSizeTextType="uniform"
+                    android:autoSizeMinTextSize="8sp"
+                    android:autoSizeMaxTextSize="12sp"
+                    android:autoSizeStepGranularity="1sp"
+                    android:textColor="@android:color/white" />
 
-                <Button
-                    android:id="@+id/btnCancelNavigation"
+                <!-- Divider -->
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginHorizontal="2dp"
+                    android:background="#B388FF" />
+
+                <!-- Screenshot Block: Label and Switch -->
+                <LinearLayout
+                    android:id="@+id/llScreenshot"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="X"
-                    android:visibility="gone" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="2dp">
+                    <TextView
+                        android:id="@+id/tvScreenshotLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Screenshot"
+                        android:singleLine="true"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="8sp"
+                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeStepGranularity="1sp"
+                        android:textColor="@android:color/white" />
+                    <Switch
+                        android:id="@+id/switchScreenshotOptions"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="2dp"/>
+                </LinearLayout>
+
+                <!-- Divider -->
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginHorizontal="2dp"
+                    android:background="#B388FF" />
+
+                <!-- Uber Icon Block -->
+                <LinearLayout
+                    android:id="@+id/llUber"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:padding="2dp">
+                    <ImageView
+                        android:id="@+id/ivUber"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_uber"
+                        android:scaleType="centerInside" />
+                </LinearLayout>
+
+                <!-- Divider -->
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginHorizontal="2dp"
+                    android:background="#B388FF" />
+
+                <!-- Lyft Icon Block -->
+                <LinearLayout
+                    android:id="@+id/llLyft"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:padding="2dp">
+                    <ImageView
+                        android:id="@+id/ivLyft"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_lyft"
+                        android:scaleType="centerInside" />
+                </LinearLayout>
+
+                <!-- Divider -->
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginHorizontal="2dp"
+                    android:background="#B388FF" />
+
+                <!-- Update Clusters Button -->
+                <Button
+                    android:id="@+id/btnUpdateClusters"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Update"
+                    android:padding="4dp"
+                    android:singleLine="true"
+                    android:autoSizeTextType="uniform"
+                    android:autoSizeMinTextSize="6sp"
+                    android:autoSizeMaxTextSize="12sp"
+                    android:autoSizeStepGranularity="1sp"
+                    android:textColor="@android:color/white" />
+            </LinearLayout>
+
+
+            <!-- AI Notificator: Positioned below the bottom controls -->
+            <LinearLayout
+                android:id="@+id/aiOutputContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#DA000000"
+                android:elevation="4dp">
+
+                <!-- Initial state: full-width message -->
+                <TextView
+                    android:id="@+id/aiInitialMessage"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="AI Thinking..."
+                    android:textColor="@color/white"
+                    android:gravity="center"
+                    android:padding="16dp"
+                    android:textSize="16sp" />
+
+                <!-- Final state: split layout, initially hidden -->
+                <LinearLayout
+                    android:id="@+id/aiSplitContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:visibility="gone">
+
+                    <!-- Go Button: keep your existing btnMapToHotspot properties -->
+                    <Button
+                        android:id="@+id/btnMapToHotspot"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Go"
+                        android:textColor="@color/white"
+                        android:background="#000000"
+                        android:singleLine="true"
+                        android:ellipsize="end" />
+
+                    <!-- Optional spacer -->
+                    <View
+                        android:layout_width="8dp"
+                        android:layout_height="match_parent" />
+
+                    <!-- Notification Text: keep your existing aiResponseText -->
+                    <TextView
+                        android:id="@+id/aiResponseText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="AI Response"
+                        android:textColor="@color/white"
+                        android:ellipsize="end"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="16sp"
+                        android:autoSizeStepGranularity="1sp" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
-
     </RelativeLayout>
 
     <!-- Navigation drawer view -->
