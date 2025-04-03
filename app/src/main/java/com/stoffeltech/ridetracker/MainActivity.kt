@@ -64,7 +64,7 @@ import com.stoffeltech.ridetracker.utils.DirectionsHelper
 import com.stoffeltech.ridetracker.utils.DistanceTracker
 import com.stoffeltech.ridetracker.utils.RevenueTracker
 import com.stoffeltech.ridetracker.utils.TimeTracker
-import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager // NEW: centralized MP manager
+import com.stoffeltech.ridetracker.MediaProjectionLifecycleManager // NEW: centralized MP manager
 import com.stoffeltech.ridetracker.services.ClusterData
 import com.stoffeltech.ridetracker.services.HistoryManager
 import com.stoffeltech.ridetracker.services.LearningData
@@ -246,16 +246,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    @SuppressLint("MissingInflatedId")
+    @SuppressLint("MissingInflatedId", "UseSwitchCompatOrMaterialCode")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // NEW: Check for an existing MediaProjection session and release it.
-        if (MediaProjectionLifecycleManager.isMediaProjectionValid()) {
-            FileLogger.log("MainActivity", "Existing MediaProjection detected at onCreate; releasing persistent capture resources and stopping MediaProjection.")
-            ScreenCaptureService.releasePersistentCapture()
-            MediaProjectionLifecycleManager.stopMediaProjection()
-        }
         setContentView(R.layout.activity_main)
         // Inside onCreate() in MainActivity.kt, after setContentView(...)
         val screenshotSwitch = findViewById<Switch>(R.id.switchScreenshotOptions)
@@ -455,15 +449,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun requestScreenCapturePermission() {
         // If an old MediaProjection session is still active, release it.
-        if (!MediaProjectionLifecycleManager.isMediaProjectionValid()) {
-            // Release persistent capture resources (ImageReader/VirtualDisplay)
-            ScreenCaptureService.releasePersistentCapture()
-            // Stop the previous MediaProjection
-            MediaProjectionLifecycleManager.stopMediaProjection()
-        }
+        ScreenCaptureService.releasePersistentCapture()
+        MediaProjectionLifecycleManager.stopMediaProjection()
         val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
         val screenCaptureIntent = mediaProjectionManager.createScreenCaptureIntent()
         screenCaptureLauncher.launch(screenCaptureIntent)
+        startOverlayService()
     }
 
 
@@ -493,19 +484,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }, 15000)
             }
         }
-        // ---------------- REQUEST MEDIA PROJECTION PERMISSION - Start ----------------
-        // In onMapReady() in MainActivity.kt:
-        if (!MediaProjectionLifecycleManager.isMediaProjectionValid()) {
-            requestScreenCapturePermission()  // Launch permission request.
-            FileLogger.log("MainActivity", "MediaProjection token invalid. Requesting new permission.")
-            return  // Exit onMapReady to avoid starting services with an invalid token.
-        } else {
-            // Safe to start the overlay service.
+        // NEW: Check for an existing MediaProjection session and release it.
+        if (MediaProjectionLifecycleManager.isMediaProjectionValid()) {
+            FileLogger.log("MainActivity", "MediaProjection detected at onCreate is valid.")
             startOverlayService()
+        } else {
+            FileLogger.log("MainActivity", "MediaProjection detected at onCreate is invalid..")
+            requestScreenCapturePermission()
         }
-
-        // ---------------- REQUEST MEDIA PROJECTION PERMISSION - End ----------------
-
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
@@ -525,6 +511,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
     }
+
     // ---------------------- UPDATED SCREEN CAPTURE LAUNCHER ----------------------
     // This callback delays the MediaProjection start until after the FloatingOverlayService is running.
     private val screenCaptureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -541,19 +528,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         delay(500)
                         ScreenCaptureService.initPersistentCapture(this@MainActivity, mediaProjection)
                     }
-                    startOverlayService()
+//                    startOverlayService()
 
-                } else {
-                    FileLogger.log("MainActivity", "MediaProjection token is not valid after delay")
-                }
-            }, 1000)
-        } ?: run {
-            FileLogger.log("MainActivity", "Screen capture permission granted but result.data is null")
+                    } else {
+                        FileLogger.log("MainActivity", "MediaProjection token is not valid after delay")
+                    }
+                }, 1000)
+            } ?: run {
+                FileLogger.log("MainActivity", "Screen capture permission granted but result.data is null")
+            }
+        } else {
+            FileLogger.log("MainActivity", "Screen capture permission denied")
         }
-    } else {
-        FileLogger.log("MainActivity", "Screen capture permission denied")
     }
-}
 
 
 
@@ -968,15 +955,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             ScreenCaptureService.lastProcessedBitmap?.recycle()
             ScreenCaptureService.lastProcessedBitmap = null
 
-            // **NEW**: Release persistent capture resources
-            ScreenCaptureService.releasePersistentCapture()
-            MediaProjectionLifecycleManager.stopMediaProjection()
         }
 
         // Only stop MediaProjection if the activity is finishing and not merely undergoing a configuration change.
         if (isFinishing && !isChangingConfigurations) {
             // Stop MediaProjection and associated VirtualDisplay(s) via the centralized manager.
-            com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager.stopMediaProjection()
+            ScreenCaptureService.releasePersistentCapture()
+            MediaProjectionLifecycleManager.stopMediaProjection()
             LogHelper.logDebug("MainActivity", "MediaProjection stopped on activity destroy.")
         } else {
             LogHelper.logDebug("MainActivity", "Activity destroyed due to configuration change; keeping MediaProjection alive.")

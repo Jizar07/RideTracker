@@ -9,7 +9,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.stoffeltech.ridetracker.lyft.LyftParser
-import com.stoffeltech.ridetracker.media.MediaProjectionLifecycleManager
+import com.stoffeltech.ridetracker.MediaProjectionLifecycleManager
 import com.stoffeltech.ridetracker.uber.UberParser
 import com.stoffeltech.ridetracker.utils.FileLogger
 import com.stoffeltech.ridetracker.utils.RevenueTracker

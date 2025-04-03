@@ -1,4 +1,4 @@
-package com.stoffeltech.ridetracker.media
+package com.stoffeltech.ridetracker
 
 import android.app.Activity
 import android.content.Context

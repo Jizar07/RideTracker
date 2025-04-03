@@ -69,10 +69,8 @@
 
         <service
             android:name=".services.FloatingOverlayService"
-            android:exported="false"
             android:foregroundServiceType="mediaProjection"
-            tools:ignore="ForegroundServicePermission" />
-
+            android:exported="false"/>
 
         <service
             android:name=".services.RideRequestMessagingService"
